@@ -34,8 +34,11 @@ SAFE_CHUNK_TOKENS = 8000     # Safe chunk size for single operations
 
 
 def estimate_tokens(text):
-    """Estimate token count from text"""
-    return len(text) // CHARS_PER_TOKEN
+    """Estimate token count using hybrid char+word estimate (closer to BPE tokenization)"""
+    char_estimate = len(text) // CHARS_PER_TOKEN
+    word_count = len(text.split())
+    word_estimate = int(word_count * 1.3)
+    return (char_estimate + word_estimate) // 2
 
 
 def analyze_directory(directory):
@@ -285,6 +288,214 @@ def summarize_file(filepath):
         print(f"{RED}[ERROR] {e}{RESET}")
 
 
+def dedup_directory(directory):
+    """Scan directory for duplicate/near-duplicate files using Jaccard similarity on word 3-grams"""
+    print(f"\n{BOLD}Duplicate Content Detection{RESET}")
+    print(f"Directory: {directory}\n")
+
+    def _ngrams(words, n=3):
+        return set(tuple(words[i:i + n]) for i in range(len(words) - n + 1))
+
+    def _jaccard(set_a, set_b):
+        if not set_a and not set_b:
+            return 1.0
+        union = len(set_a | set_b)
+        return len(set_a & set_b) / union if union > 0 else 0.0
+
+    file_ngrams = {}
+    for root, _, files in os.walk(directory):
+        for fname in files:
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, 'r', encoding='utf-8', errors='ignore') as fh:
+                    words = fh.read().lower().split()
+                file_ngrams[fpath] = _ngrams(words)
+            except Exception:
+                pass
+
+    paths = list(file_ngrams.keys())
+    duplicates = []
+
+    for i in range(len(paths)):
+        for j in range(i + 1, len(paths)):
+            sim = _jaccard(file_ngrams[paths[i]], file_ngrams[paths[j]])
+            if sim > 0.80:
+                duplicates.append({
+                    "file_a": paths[i],
+                    "file_b": paths[j],
+                    "similarity": round(sim, 4),
+                    "recommendation": "consolidate"
+                })
+
+    if duplicates:
+        print(f"{YELLOW}{BOLD}Found {len(duplicates)} near-duplicate pair(s):{RESET}\n")
+        for d in duplicates:
+            pct = d["similarity"] * 100
+            print(f"  {RED}{pct:.1f}% overlap{RESET}")
+            print(f"    A: {d['file_a']}")
+            print(f"    B: {d['file_b']}")
+            print(f"    Recommendation: {d['recommendation']}\n")
+    else:
+        print(f"{GREEN}[OK] No near-duplicate files found (threshold: 80%).{RESET}")
+
+    return duplicates
+
+
+def compress_file(filepath):
+    """Compress a file by stripping comments, blank lines, and Python docstrings"""
+    print(f"\n{BOLD}Compress File{RESET}")
+    print(f"Input: {filepath}\n")
+
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as fh:
+            content = fh.read()
+
+        original_lines = content.split('\n')
+        original_count = len(original_lines)
+        result = []
+
+        if filepath.endswith('.py'):
+            in_docstring = False
+            docstring_char = None
+
+            for line in original_lines:
+                stripped = line.strip()
+
+                if in_docstring:
+                    if docstring_char in line:
+                        in_docstring = False
+                    continue
+
+                is_docstring_start = False
+                for dq in ('"""', "'''"):
+                    if stripped.startswith(dq):
+                        is_docstring_start = True
+                        rest = stripped[3:]
+                        if dq not in rest:
+                            in_docstring = True
+                            docstring_char = dq
+                        break
+
+                if is_docstring_start:
+                    continue
+                if not stripped:
+                    continue
+                if stripped.startswith('#'):
+                    continue
+                result.append(line)
+        else:
+            for line in original_lines:
+                stripped = line.strip()
+                if not stripped or stripped.startswith('#'):
+                    continue
+                result.append(line)
+
+        compressed = '\n'.join(result)
+        compressed_count = len(result)
+
+        p = Path(filepath)
+        if p.suffix == '.py':
+            out_path = str(p.parent / (p.stem + '_compressed.py'))
+        else:
+            out_path = str(p.parent / (p.stem + '_compressed.txt'))
+
+        with open(out_path, 'w') as fh:
+            fh.write(compressed)
+
+        original_tokens = estimate_tokens(content)
+        compressed_tokens = estimate_tokens(compressed)
+        savings = original_tokens - compressed_tokens
+        pct = (savings / original_tokens * 100) if original_tokens > 0 else 0
+
+        print(f"Before: {original_count:,} lines, {original_tokens:,} tokens")
+        print(f"After:  {compressed_count:,} lines, {compressed_tokens:,} tokens")
+        print(f"Saved:  {savings:,} tokens ({pct:.1f}%)")
+        print(f"{GREEN}[SAVED]{RESET} {out_path}")
+
+        return compressed
+
+    except Exception as e:
+        print(f"{RED}[ERROR] {e}{RESET}")
+        return None
+
+
+def budget_select(directory, budget_tokens):
+    """Greedily select files from a directory up to a token budget, CRITICAL-first"""
+    print(f"\n{BOLD}Budget File Selection{RESET}")
+    print(f"Directory: {directory}")
+    print(f"Budget: {budget_tokens:,} tokens\n")
+
+    priority_rules = {
+        'CRITICAL': [
+            'credentials', 'api_key', 'secret', 'password', 'token',
+            'admin', 'internal', 'dev', 'staging'
+        ],
+        'HIGH': [
+            'endpoint', 'graphql', 'api', 'upload', 'payment',
+            'user', 'auth', 'login', 'reset'
+        ],
+        'MEDIUM': [
+            'config', 'swagger', 'openapi', 'wsdl', 'subdomain'
+        ],
+        'LOW': [
+            'static', 'asset', 'image', 'css', 'js'
+        ]
+    }
+
+    file_priorities = defaultdict(list)
+
+    for root, _, files in os.walk(directory):
+        for fname in files:
+            fpath = os.path.join(root, fname)
+            rel_path = os.path.relpath(fpath, directory)
+            try:
+                with open(fpath, 'r', encoding='utf-8', errors='ignore') as fh:
+                    content = fh.read()
+                content_lower = content.lower()
+
+                priority = 'LOW'
+                for level, keywords in priority_rules.items():
+                    for keyword in keywords:
+                        if keyword in content_lower or keyword in rel_path.lower():
+                            if level == 'CRITICAL':
+                                priority = 'CRITICAL'
+                            elif level == 'HIGH' and priority not in ('CRITICAL',):
+                                priority = 'HIGH'
+                            elif level == 'MEDIUM' and priority not in ('CRITICAL', 'HIGH'):
+                                priority = 'MEDIUM'
+
+                tokens = estimate_tokens(content)
+                file_priorities[priority].append({
+                    'path': fpath,
+                    'rel_path': rel_path,
+                    'tokens': tokens,
+                    'priority': priority
+                })
+            except Exception:
+                pass
+
+    # Flatten in priority order, largest-tokens-first within each level
+    ordered = []
+    for level in ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW'):
+        ordered.extend(sorted(file_priorities[level], key=lambda x: x['tokens'], reverse=True))
+
+    selected = []
+    total_used = 0
+    for entry in ordered:
+        if total_used + entry['tokens'] <= budget_tokens:
+            selected.append(entry['path'])
+            total_used += entry['tokens']
+            color = RED if entry['priority'] == 'CRITICAL' else YELLOW if entry['priority'] == 'HIGH' else CYAN
+            print(f"  {color}[{entry['priority']}]{RESET} {entry['rel_path']} ({entry['tokens']:,} tokens)")
+
+    print(f"\n{BOLD}Summary:{RESET}")
+    print(f"  Selected: {len(selected)} files")
+    budget_pct = (total_used / budget_tokens * 100) if budget_tokens > 0 else 0
+    print(f"  Tokens used: {total_used:,} / {budget_tokens:,} ({budget_pct:.1f}%)")
+
+    return selected, total_used
+
+
 def main():
     parser = argparse.ArgumentParser(description="Token usage optimizer for Claude Code")
     parser.add_argument("--analyze", help="Analyze directory token usage")
@@ -293,9 +504,14 @@ def main():
     parser.add_argument("--prioritize", help="Prioritize content by relevance")
     parser.add_argument("--summarize", help="Generate token-efficient summary")
     parser.add_argument("--json", dest="json_out", action="store_true", help="JSON output")
+    parser.add_argument("--dedup", help="Scan directory for duplicate content")
+    parser.add_argument("--compress", help="Compress a file, stripping comments/blanks")
+    parser.add_argument("--budget", type=int, help="Token budget: select files from --analyze directory")
     args = parser.parse_args()
 
-    if args.analyze:
+    if args.analyze and args.budget:
+        budget_select(args.analyze, args.budget)
+    elif args.analyze:
         analyze_directory(args.analyze)
     elif args.chunk:
         chunk_file(args.chunk, args.max_tokens)
@@ -303,6 +519,10 @@ def main():
         prioritize_content(args.prioritize)
     elif args.summarize:
         summarize_file(args.summarize)
+    elif args.dedup:
+        dedup_directory(args.dedup)
+    elif args.compress:
+        compress_file(args.compress)
     else:
         parser.print_help()
 
