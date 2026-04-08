@@ -4,7 +4,7 @@
 
 <div align="center">
 
-<img src="https://img.shields.io/badge/v3.0.0-Bionic_Hunter-blueviolet?style=for-the-badge" alt="v3.0.0">
+<img src="https://img.shields.io/badge/v4.0.0-Exotic_Hunter-blueviolet?style=for-the-badge" alt="v4.0.0">
 
 # Claude Bug Bounty
 
@@ -24,14 +24,14 @@
 
 <br>
 
-<a href="#-quick-start">Quick Start</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="#-how-it-works">How It Works</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="#-commands">Commands</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="#-whats-new-in-v300">What's New</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="#-installation">Install</a>
+<a href="#-quick-start">Quick Start</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="#-how-it-works">How It Works</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="#-commands">Commands</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="#-whats-new-in-v400">What's New</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="#-installation">Install</a>
 
 <br>
 
 ```
-  13 commands  ·  7 AI agents  ·  8 skill domains
-  20 web2 vuln classes  ·  10 web3 bug classes
-  Burp MCP  ·  HackerOne MCP  ·  Autonomous Mode
+  16 commands  ·  7 AI agents  ·  9 skill domains
+  55 web2 vuln classes  ·  10 web3 bug classes
+  Burp MCP  ·  HackerOne MCP  ·  Kali Integration  ·  Autonomous Mode
 ```
 
 </div>
@@ -104,6 +104,14 @@ claude                          # Start Claude Code
 /autopilot target.com --normal  # Full autonomous hunt loop
 /intel target.com               # Fetch CVE + disclosure intel
 /resume target.com              # Pick up where you left off
+```
+
+**Step 4 — Hunt Exotic Vulns & Kali Tools** *(new in v4)*
+
+```bash
+/exotic target.com              # Hunt 35 exotic vuln classes with 14 scanners
+/kali target.com --profile web  # Kali Linux tools integration (40+ tools)
+/deep-scan target.com           # Deep network/SSL/DNS scanning
 ```
 
 <br>
@@ -182,6 +190,14 @@ Each stage feeds the next. Claude orchestrates everything, or you run any stage 
 | `/remember` | Save finding or pattern to persistent memory |
 | `/intel target.com` | CVEs + disclosures cross-referenced with your hunt history |
 
+### Exotic Vulns, Kali & Deep Scan *(new in v4)*
+
+| Command | What It Does |
+|:---|:---|
+| `/exotic target.com` | Hunt 35 exotic vuln classes with 14 specialized scanners |
+| `/kali target.com --profile web` | Kali Linux tools integration (40+ tools: nmap, nikto, sqlmap, ...) |
+| `/deep-scan target.com` | Deep network/SSL/DNS rebinding scanning with custom Python tools |
+
 <br>
 
 ---
@@ -201,6 +217,65 @@ Each stage feeds the next. Claude orchestrates everything, or you run any stage 
 | **chain-builder** | Systematic A-B-C exploit chaining | Sonnet |
 | **autopilot** | Autonomous hunt loop with circuit breaker | Sonnet |
 | **recon-ranker** | Attack surface ranking from recon + memory | Haiku *(fast)* |
+
+<br>
+
+---
+
+<br>
+
+## What's New in v4.0.0
+
+> **The bionic hacker gets 35 more weapons.**
+
+<details>
+<summary><b>35 Exotic Vulnerability Classes</b> — <code>/exotic</code></summary>
+<br>
+
+New skill (`skills/exotic-vulns/`) covering vuln classes 21–55: JWT attacks, prototype pollution, deserialization, XXE, WebSockets, HTTP/2 desync, DNS rebinding, CORS deep, LDAP injection, NoSQL expanded, CRLF, cache deception, postMessage XSS, CSS injection, ESI injection, PDF SSRF, dependency confusion, and more.
+
+Profiles: `--profile quick` (6 scanners, 5–10 min), `--profile deep` (all 14, 20–30 min), `--scanner <name>` (single scanner).
+
+</details>
+
+<details>
+<summary><b>Kali Linux Integration</b> — <code>/kali</code></summary>
+<br>
+
+`kali_integration.py` — unified orchestrator for 40+ Kali security tools with pre-configured profiles:
+- `web` — nikto, sqlmap, dirb, gobuster, wpscan
+- `network` — nmap, masscan
+- `webapp` — Burp Suite, ZAP, sqlmap
+- `password` — john, hashcat, hydra
+- `enumeration` — enum4linux, smbclient
+- `full` — comprehensive coverage
+
+`kali_tool_detector.py` detects installed tools and generates install scripts for missing ones.
+
+</details>
+
+<details>
+<summary><b>Deep Scanning</b> — <code>/deep-scan</code></summary>
+<br>
+
+Custom Python scanners for deep network analysis:
+- SSL/TLS configuration (protocol versions, cipher suites, certificate validation)
+- Port scanning with service detection and banner grabbing
+- DNS rebinding and localhost bypass detection
+
+Profiles: `fast` (top 20 ports), `full` (top 1000 ports), `--scanner ssl`, `--scanner dns`.
+
+</details>
+
+<details>
+<summary><b>Context & Token Management</b></summary>
+<br>
+
+Two new tools for managing long hunt sessions:
+- **`token_optimizer.py`** — analyzes token usage, chunks large files, prioritizes content (CRITICAL/HIGH/MEDIUM/LOW), summarizes endpoints/IPs
+- **`context_manager.py`** — session persistence, item prioritization, auto-compaction, token budget allocation (memory 15%, findings 30%, recon 25%, conversation 25%)
+
+</details>
 
 <br>
 
@@ -284,7 +359,7 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 ## Vulnerability Coverage
 
 <details>
-<summary><b>20 Web2 Bug Classes</b> — click to expand</summary>
+<summary><b>20 Standard Web2 Bug Classes</b> — click to expand</summary>
 <br>
 
 | Class | Key Techniques | Typical Payout |
@@ -309,6 +384,50 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 | **Cache Poisoning** | Unkeyed headers, parameter cloaking, web cache deception | $1K - $10K |
 | **MFA Bypass** | No rate limit, OTP reuse, response manipulation, race | $1K - $10K |
 | **SAML/SSO** | XSW, comment injection, signature stripping, XXE | $2K - $20K |
+
+</details>
+
+<details>
+<summary><b>35 Exotic Web2 Bug Classes</b> *(new in v4)* — click to expand</summary>
+<br>
+
+| Class | Key Techniques | Typical Payout |
+|:---|:---|:---|
+| **JWT Attacks** | alg=none, RS256→HS256 confusion, kid injection, jwk injection | $500 - $5K |
+| **Prototype Pollution** | Client-side, server-side (Express/lodash/qs), PP→RCE | $1K - $10K |
+| **Deserialization** | Java (ysoserial), Python pickle, PHP POP chains, .NET ViewState | $2K - $20K |
+| **XXE** | Classic, blind, SSRF via XXE, SVG/XLSX/DOCX | $1K - $10K |
+| **WebSocket IDOR** | Auth bypass, CSWSH, IDOR over WS, hijacking | $500 - $5K |
+| **HTTP/2 Desync** | H2.CL, H2.TE, request tunneling, response queue poisoning | $5K - $30K |
+| **DNS Rebinding** | Localhost bypass, Host header manipulation, internal probing | $1K - $10K |
+| **CORS Deep** | Origin reflection, null origin, pre-flight bypass | $500 - $5K |
+| **Insecure Randomness** | Predictable tokens, weak PRNG, time-seeded values | $500 - $5K |
+| **LDAP Injection** | Auth bypass, blind injection, AND/OR logic | $1K - $10K |
+| **NoSQL Injection** | MongoDB operator injection, auth bypass, blind extraction | $1K - $10K |
+| **Rate Limit Bypass** | Header spoofing, endpoint rotation, IP rotation, null byte | $500 - $5K |
+| **Clickjacking Advanced** | Double-frame bypass, drag-drop, touchscreen attacks | $200 - $2K |
+| **CRLF Injection** | Header injection, XSS via CRLF, response splitting | $500 - $5K |
+| **Web Cache Deception** | Path confusion, extension bypass, vary header abuse | $1K - $10K |
+| **Server-Side PP** | Express/Mongoose/lodash server, PP→RCE escalation | $2K - $15K |
+| **postMessage XSS** | Missing origin check, wildcard target, frame confusion | $500 - $5K |
+| **CSS Injection** | Data exfil via attribute selectors, @import tricks | $200 - $2K |
+| **Dangling Markup** | Form injection, meta refresh, attribute capture | $200 - $2K |
+| **ESI Injection** | ESI includes, SSRF via ESI, XSS escalation | $1K - $10K |
+| **PDF SSRF** | wkhtmltopdf, headless Chrome, html2pdf SSRF | $500 - $5K |
+| **Email Header Injection** | SMTP header injection, CC/BCC injection, phishing pivot | $200 - $2K |
+| **Subdomain Delegation Takeover** | Dangling NS/CNAME, zone delegation, DNS provider exploit | $500 - $5K |
+| **OAuth Token Theft via Referer** | Token in Referer header, analytics leaks, postMessage | $500 - $5K |
+| **Timing Side Channels** | Username enum, token comparison, crypto timing | $200 - $5K |
+| **Integer Overflow** | Signed/unsigned confusion, wrap-around, price manipulation | $1K - $10K |
+| **ReDoS** | Backtracking regex, catastrophic complexity, service disruption | $200 - $5K |
+| **Host Header Poisoning (Advanced)** | Password reset, cache poisoning, middleware bypass | $500 - $10K |
+| **GraphQL Deep** | Batching bypass, nested DoS, alias abuse, circular fragments | $1K - $10K |
+| **Dependency Confusion** | Internal package hijacking, npm/PyPI/RubyGems | $500 - $30K |
+| **Client-Side Desync** | Browser-assisted request smuggling, CORS bypass | $2K - $20K |
+| **HTTP Parameter Pollution** | Duplicate params, WAF bypass, logic abuse | $200 - $5K |
+| **Mass Assignment** | Hidden fields, JSON extra keys, admin privilege escalation | $500 - $10K |
+| **Path Traversal (Advanced)** | Unicode bypass, null byte, double-encode, zip-slip | $500 - $10K |
+| **WebSocket IDOR (Advanced)** | Privileged channel access, session fixation via WS | $1K - $10K |
 
 </details>
 
@@ -354,6 +473,10 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 | `scope_checker.py` | Deterministic scope safety with anchored suffix matching |
 | `cicd_scanner.sh` | GitHub Actions SAST — wraps [sisakulint](https://github.com/sisaku-security/sisakulint) remote scan (52 rules, 81.6% GHSA coverage) |
 | `mindmap.py` | Prioritized attack mindmap generator |
+| `kali_integration.py` | Unified Kali tool orchestrator (40+ tools, 6 profiles) *(new in v4)* |
+| `kali_tool_detector.py` | Detects installed Kali tools, generates install scripts *(new in v4)* |
+| `token_optimizer.py` | Token usage analyzer, chunker, content prioritization *(new in v4)* |
+| `context_manager.py` | Context window manager for long hunt sessions *(new in v4)* |
 
 </details>
 
@@ -372,6 +495,35 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 | `vuln_scanner.sh` | Orchestrates nuclei + dalfox + sqlmap |
 | `hai_probe.py` | AI chatbot IDOR, prompt injection |
 | `hai_payload_builder.py` | Prompt injection payload generator |
+| `xss_scanner.py` | XSS detection (reflected, stored, DOM) |
+| `sqli_scanner.py` | SQL injection (error-based, blind, WAF bypass) |
+| `crlf_scanner.py` | CRLF injection + response splitting |
+| `cache_deception_scanner.py` | Web cache deception attacks |
+| `rate_limit_tester.py` | Rate limit bypass techniques |
+
+</details>
+
+<details>
+<summary><b>Exotic Vulnerability Scanners</b> — <code>tools/</code> *(new in v4)*</summary>
+<br>
+
+| Tool | Target |
+|:---|:---|
+| `dependency_confusion_scanner.py` | Internal package hijacking (npm, PyPI, RubyGems, Go) |
+| `graphql_deep_scanner.py` | Introspection, batching, nested DoS, mutations |
+| `ssl_scanner.py` | SSL/TLS config, certs, ciphers, protocol versions |
+| `network_scanner.py` | Port scanning, service detection, banner grabbing |
+| `dns_rebinding_tester.py` | DNS rebinding, localhost bypass, Host header tests |
+| `jwt_scanner.py` | JWT attacks (alg=none, RS256→HS256, kid injection) |
+| `proto_pollution_scanner.py` | Prototype pollution (client + server-side) |
+| `deserial_scanner.py` | Deserialization (Java, Python, .NET, PHP, Ruby) |
+| `xxe_scanner.py` | XXE (classic, blind, SSRF via XXE) |
+| `websocket_scanner.py` | WebSocket IDOR, CSWSH, auth bypass |
+| `host_header_scanner.py` | Host header poisoning |
+| `timing_scanner.py` | Timing side channels |
+| `postmessage_scanner.py` | postMessage XSS |
+| `css_injection_scanner.py` | CSS injection attacks |
+| `esi_scanner.py` | ESI injection |
 
 </details>
 
@@ -405,15 +557,15 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 
 ```
 claude-bug-bounty/
-├── skills/                     8 skill domains (SKILL.md files)
-├── commands/                   13 slash commands
+├── skills/                     9 skill domains (SKILL.md files)
+├── commands/                   16 slash commands
 ├── agents/                     7 specialized AI agents
-├── tools/                      21 Python/shell tools
+├── tools/                      50 Python/shell tools
 ├── memory/                     Persistent hunt memory system
 ├── mcp/                        MCP server integrations
 │   ├── burp-mcp-client/        Burp Suite proxy
 │   └── hackerone-mcp/          HackerOne public API
-├── tests/                      129 tests
+├── tests/                      test suite
 ├── rules/                      Always-active hunting + reporting rules
 ├── hooks/                      Session start/stop hooks
 ├── docs/                       Payload arsenal + technique guides
