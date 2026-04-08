@@ -10,7 +10,7 @@ Less-saturated, high-signal bug classes. Root cause, payloads, bypass tables, im
 ---
 
 ## 21. JWT ATTACKS
-> Misimplemented JWT validation is trivially exploitable and still extremely common.
+> Incorrectly implemented JWT validation is trivially exploitable and still extremely common.
 
 ### Root Cause
 JWTs have three parts: header.payload.signature. Signature validation logic errors let attackers forge tokens without the secret key.
@@ -2241,7 +2241,10 @@ dig NS legacy.target.com @8.8.8.8
 
 ### Root Cause
 ```
-OAuth implicit flow (deprecated but still used):
+OAuth implicit flow (deprecated in OAuth 2.1 / RFC 9700 — replaced by Authorization Code + PKCE):
+Still widely encountered in legacy apps. The recommended migration is to response_type=code
+with PKCE (Proof Key for Code Exchange), which keeps tokens off the URL entirely.
+
 Callback URL: https://app.com/callback#access_token=SECRET123&token_type=bearer
 
 1. Token is in URL fragment (#)
