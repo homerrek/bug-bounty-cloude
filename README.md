@@ -4,7 +4,7 @@
 
 <div align="center">
 
-<img src="https://img.shields.io/badge/v4.0.0-Exotic_Vulns_%2B_Kali-blueviolet?style=for-the-badge" alt="v4.0.0">
+<img src="https://img.shields.io/badge/v4.2.0-New_Scanners_%2B_Optimizations-blueviolet?style=for-the-badge" alt="v4.2.0">
 
 # Claude Bug Bounty
 
@@ -19,7 +19,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-3776AB.svg?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-129_passing-brightgreen.svg?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-267_passing-brightgreen.svg?style=flat-square)](tests/)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-D97706.svg?style=flat-square&logo=anthropic&logoColor=white)](https://claude.ai/claude-code)
 
 <br>
@@ -30,7 +30,7 @@
 
 ```
   16 commands  ·  7 AI agents  ·  9 skill domains
-  55 web2 vuln classes  ·  10 web3 bug classes
+  58 web2 vuln classes  ·  10 web3 bug classes
   Burp MCP  ·  HackerOne MCP  ·  Kali Integration  ·  Autonomous Mode
   60% smaller prompt footprint — same coverage, faster sessions
 ```
@@ -218,6 +218,41 @@ Each stage feeds the next. Claude orchestrates everything, or you run any stage 
 | **chain-builder** | Systematic A-B-C exploit chaining | Sonnet |
 | **autopilot** | Autonomous hunt loop with circuit breaker | Sonnet |
 | **recon-ranker** | Attack surface ranking from recon + memory | Haiku *(fast)* |
+
+<br>
+
+---
+
+<br>
+
+## What's New in v4.2.0
+
+> **3 new scanners. Smarter token optimization. 56 new tests.**
+
+<details>
+<summary><b>New Scanners: CORS, SSTI, Open Redirect</b></summary>
+<br>
+
+Three new Python scanners, zero new dependencies (stdlib only):
+
+- **`cors_scanner.py`** — 6 CORS test vectors: origin reflection, null origin (sandboxed iframe), subdomain wildcard, pre-flight bypass, credential exposure (CRITICAL), internal network origins
+- **`ssti_scanner.py`** — Universal SSTI probe + 10 engine-specific payloads (Jinja2, Twig, Freemarker, ERB, Spring EL, Thymeleaf, EJS, Pug, Handlebars, Mako) + WAF bypass variants + blind time-based detection
+- **`open_redirect_scanner.py`** — 18 redirect parameters, 30+ bypass techniques (protocol-relative, backslash, at-sign, encoding, fragment, parameter pollution), OAuth `redirect_uri` chain detection
+
+</details>
+
+<details>
+<summary><b>Token Optimizer + Context Manager Enhancements</b></summary>
+<br>
+
+- **`--dedup`**: Find near-duplicate files (>80% Jaccard similarity) in a directory
+- **`--compress`**: Strip comments/blanks/docstrings from files for context-efficient loading
+- **`--budget N`**: Auto-select highest-priority files that fit within N tokens
+- **Improved `estimate_tokens()`**: Hybrid char+word estimate for better BPE accuracy
+- **`--auto-compact`**: Auto-compact context when usage hits 80%
+- **`--snapshot` / `--restore` / `--diff`**: Named context snapshots for branching hunt sessions
+
+</details>
 
 <br>
 

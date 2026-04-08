@@ -31,6 +31,7 @@ RESET  = "\033[0m"
 CHARS_PER_TOKEN = 4
 MAX_CONTEXT_TOKENS = 200000  # Claude Sonnet 4.5 context window
 SAFE_CHUNK_TOKENS = 8000     # Safe chunk size for single operations
+DUPLICATE_THRESHOLD = 0.80   # Jaccard similarity threshold for dedup detection
 
 
 def estimate_tokens(text):
@@ -38,7 +39,8 @@ def estimate_tokens(text):
     char_estimate = len(text) // CHARS_PER_TOKEN
     word_count = len(text.split())
     word_estimate = int(word_count * 1.3)
-    return (char_estimate + word_estimate) // 2
+    # Use max to avoid underestimating very short strings
+    return max(word_count, (char_estimate + word_estimate) // 2)
 
 
 def analyze_directory(directory):
@@ -319,7 +321,7 @@ def dedup_directory(directory):
     for i in range(len(paths)):
         for j in range(i + 1, len(paths)):
             sim = _jaccard(file_ngrams[paths[i]], file_ngrams[paths[j]])
-            if sim > 0.80:
+            if sim > DUPLICATE_THRESHOLD:
                 duplicates.append({
                     "file_a": paths[i],
                     "file_b": paths[j],

@@ -1,23 +1,23 @@
 ---
 name: exotic
-description: Hunt exotic and less-known vulnerability classes (JWT, prototype pollution, deserialization, XXE, WebSockets, HTTP/2 desync, DNS rebinding, and 28 more). Leverages the exotic-vulns skill with 35 bug classes (21-55) and 14 specialized scanners.
+description: Hunt exotic and less-known vulnerability classes (JWT, prototype pollution, deserialization, XXE, WebSockets, HTTP/2 desync, DNS rebinding, CORS deep, SSTI, open redirect, and 28 more). Leverages the exotic-vulns skill with 38 bug classes and 17 specialized scanners.
 ---
 
 # /exotic — Exotic Vulnerability Hunter
 
-Targets 35 less-saturated, high-signal bug classes that most hunters miss.
+Targets 38 less-saturated, high-signal bug classes that most hunters miss.
 
 ## Usage
 
 ```bash
 /exotic target.com
-/exotic target.com --profile deep     # All 14 scanners
+/exotic target.com --profile deep     # All 17 scanners
 /exotic target.com --profile quick    # Top 6 scanners only
 /exotic target.com --scanner jwt      # Single scanner
 /exotic target.com --header "Authorization: Bearer TOKEN" --scanner graphql
 ```
 
-## Scanners (14 total)
+## Scanners (17 total)
 
 | Scanner | Bug Class | Priority |
 |---|---|---|
@@ -35,11 +35,14 @@ Targets 35 less-saturated, high-signal bug classes that most hunters miss.
 | `dependency_confusion_scanner.py` | Dependency confusion (internal package hijacking) | CRITICAL |
 | `ssl_scanner.py` | SSL/TLS misconfig | MEDIUM |
 | `dns_rebinding_tester.py` | DNS rebinding, localhost bypass | HIGH |
+| `cors_scanner.py` | CORS misconfiguration (origin reflection, null origin, credentials) | HIGH |
+| `ssti_scanner.py` | Server-Side Template Injection (Jinja2, Twig, Freemarker, ERB, etc.) | CRITICAL |
+| `open_redirect_scanner.py` | Open redirect (18 params, 30+ bypass techniques, OAuth redirect_uri) | HIGH |
 
 ## Profiles
 
 - `--profile quick` — JWT, GraphQL, dependency confusion, host header, deserialization, XXE (~5-10 min)
-- `--profile deep` — All 14 scanners + extended payloads (~20-30 min)
+- `--profile deep` — All 17 scanners + extended payloads (~20-30 min)
 - `--scanner <name>` — Single scanner only
 
 ## Output

@@ -34,6 +34,9 @@ RESET  = "\033[0m"
 
 FINDINGS = []
 
+# Minimum response delay (seconds) to flag as a blind SSTI time-based finding
+BLIND_DELAY_THRESHOLD = 3.5
+
 # ─── Payloads ─────────────────────────────────────────────────────────────────
 
 # Universal detection — result of 7*7 == 49 detected in response
@@ -218,7 +221,6 @@ def test_waf_bypass(url: str, params: list[str], rate: float, dry_run: bool):
 
 def test_blind_time_based(url: str, params: list[str], rate: float, dry_run: bool):
     print(f"\n{BOLD}[4] Blind / Time-Based Probes{RESET}")
-    delay_threshold = 3.5  # seconds
     for param in params[:2]:
         for payload, label, desc in BLIND_PAYLOADS:
             test_url = _inject_param(url, param, payload)
@@ -233,9 +235,9 @@ def test_blind_time_based(url: str, params: list[str], rate: float, dry_run: boo
                 # Network error / timeout — cannot draw conclusions
                 record(f"ssti-blind-{label}-{param}", "ERROR",
                        f"Request failed (no response) for {label} on param={param}")
-            elif elapsed >= delay_threshold:
+            elif elapsed >= BLIND_DELAY_THRESHOLD:
                 record(f"ssti-blind-{label}-{param}", "VULNERABLE",
-                       f"Response delayed {elapsed:.1f}s ≥ {delay_threshold}s "
+                       f"Response delayed {elapsed:.1f}s ≥ {BLIND_DELAY_THRESHOLD}s "
                        f"({desc}) param={param}", "HIGH")
             else:
                 record(f"ssti-blind-{label}-{param}", "SAFE",
