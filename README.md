@@ -4,7 +4,7 @@
 
 <div align="center">
 
-<img src="https://img.shields.io/badge/v4.0.0-Exotic_Hunter-blueviolet?style=for-the-badge" alt="v4.0.0">
+<img src="https://img.shields.io/badge/v4.1.0-Token_Optimized-blueviolet?style=for-the-badge" alt="v4.1.0">
 
 # Claude Bug Bounty
 
@@ -32,6 +32,7 @@
   16 commands  ·  7 AI agents  ·  9 skill domains
   55 web2 vuln classes  ·  10 web3 bug classes
   Burp MCP  ·  HackerOne MCP  ·  Kali Integration  ·  Autonomous Mode
+  60% smaller prompt footprint — same coverage, faster sessions
 ```
 
 </div>
@@ -224,6 +225,37 @@ Each stage feeds the next. Claude orchestrates everything, or you run any stage 
 
 <br>
 
+## What's New in v4.1.0
+
+> **60% smaller prompt footprint. Same full coverage.**
+
+<details>
+<summary><b>Token-Optimized Architecture</b></summary>
+<br>
+
+Every session used to load ~95,000 tokens of overlapping markdown before a single prompt was typed. v4.1.0 eliminates the duplication:
+
+- **Root `SKILL.md`** replaced with a thin pointer — canonical content lives in `skills/bug-bounty/SKILL.md`
+- **Agent files** (`autopilot`, `validator`, `chain-builder`, `report-writer`, `recon-agent`, `web3-auditor`) now carry only agent-specific behavior; duplicated methodology content replaced with `> Ref:` pointers to canonical sources
+- **Command files** trimmed to usage + key details + references — the 7-Question Gate, A→B chain table, CVSS patterns, and recon pipeline each exist in exactly one place
+
+| Scope | Before | After | Δ |
+|:---|:---|:---|:---|
+| Total prompt-loaded files | ~173 KB | ~69 KB | **−60%** |
+| Root SKILL.md | 48.6 KB | 254 bytes | −99% |
+| agents/ combined | 40.8 KB | 19.2 KB | −53% |
+| commands/ (modified) | 63.0 KB | 27.9 KB | −56% |
+
+Canonical sources kept intact and unchanged: `rules/hunting.md`, `rules/reporting.md`, `skills/bug-bounty/SKILL.md`, `commands/web3-audit.md`.
+
+</details>
+
+<br>
+
+---
+
+<br>
+
 ## What's New in v4.0.0
 
 > **The bionic hacker gets 35 more weapons.**
@@ -271,9 +303,11 @@ Profiles: `fast` (top 20 ports), `full` (top 1000 ports), `--scanner ssl`, `--sc
 <summary><b>Context & Token Management</b></summary>
 <br>
 
-Two new tools for managing long hunt sessions:
+Two tools for managing long hunt sessions:
 - **`token_optimizer.py`** — analyzes token usage, chunks large files, prioritizes content (CRITICAL/HIGH/MEDIUM/LOW), summarizes endpoints/IPs
 - **`context_manager.py`** — session persistence, item prioritization, auto-compaction, token budget allocation (memory 15%, findings 30%, recon 25%, conversation 25%)
+
+Combined with the v4.1.0 token-optimized architecture (60% smaller prompt footprint), sessions start with far more headroom for actual findings.
 
 </details>
 
@@ -557,7 +591,8 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 
 ```
 claude-bug-bounty/
-├── skills/                     9 skill domains (SKILL.md files)
+├── skills/                     9 skill domains (canonical SKILL.md files)
+├── SKILL.md                    thin pointer → skills/bug-bounty/SKILL.md
 ├── commands/                   16 slash commands
 ├── agents/                     7 specialized AI agents
 ├── tools/                      50 Python/shell tools
