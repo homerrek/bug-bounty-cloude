@@ -4,7 +4,7 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 
 ## What's Here
 
-### Skills (8 domains — load with `/bug-bounty`, `/web2-recon`, etc.)
+### Skills (9 domains — load with `/bug-bounty`, `/web2-recon`, etc.)
 
 | Skill | Domain |
 |---|---|
@@ -12,12 +12,13 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 | `skills/bb-methodology/` | **Hunting mindset + 5-phase non-linear workflow + tool routing + session discipline** |
 | `skills/web2-recon/` | Subdomain enum, live host discovery, URL crawling, nuclei |
 | `skills/web2-vuln-classes/` | 18 bug classes with bypass tables (SSRF, open redirect, file upload, Agentic AI) |
+| `skills/exotic-vulns/` | **35 exotic vuln classes (21-55) — JWT, prototype pollution, XXE, WebSocket, HTTP/2 desync, DNS rebinding, and 29 more** |
 | `skills/security-arsenal/` | Payloads, bypass tables, gf patterns, always-rejected list |
 | `skills/web3-audit/` | 10 smart contract bug classes, Foundry PoC template, pre-dive kill signals |
 | `skills/report-writing/` | H1/Bugcrowd/Intigriti/Immunefi report templates, CVSS 3.1, human tone |
 | `skills/triage-validation/` | 7-Question Gate, 4 gates, never-submit list, conditionally valid table |
 
-### Commands (13 slash commands)
+### Commands (16 slash commands)
 
 | Command | Usage |
 |---|---|
@@ -34,6 +35,9 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 | `/resume` | `/resume target.com` — pick up previous hunt |
 | `/remember` | `/remember` — log finding to hunt memory |
 | `/intel` | `/intel target.com` — fetch CVE + disclosure intel |
+| `/exotic` | `/exotic target.com` — hunt 35 exotic vuln classes with 14 specialized scanners |
+| `/kali` | `/kali target.com --profile web` — integrate Kali Linux tools (nmap, nikto, sqlmap, 40+ more) |
+| `/deep-scan` | `/deep-scan target.com` — deep network/SSL/DNS scanning with custom Python tools |
 
 ### Agents (7 specialized agents)
 
@@ -52,6 +56,7 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 
 ### Tools (Python/shell — in `tools/`)
 
+**Core Pipeline:**
 - `tools/hunt.py` — master orchestrator
 - `tools/recon_engine.sh` — subdomain + URL discovery
 - `tools/validate.py` — 4-gate finding validator
@@ -60,6 +65,31 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 - `tools/intel_engine.py` — on-demand intel with memory context
 - `tools/scope_checker.py` — deterministic scope safety checker
 - `tools/cicd_scanner.sh` — GitHub Actions workflow scanner (sisakulint wrapper, remote scan)
+
+**Exotic Vulnerability Scanners (14 tools):**
+- `tools/dependency_confusion_scanner.py` — internal package hijacking detector
+- `tools/graphql_deep_scanner.py` — GraphQL introspection, batching, nested DoS, mutations
+- `tools/ssl_scanner.py` — SSL/TLS config, certs, ciphers, protocol versions
+- `tools/network_scanner.py` — port scanning, service detection, banner grabbing
+- `tools/dns_rebinding_tester.py` — DNS rebinding, localhost bypass, Host header tests
+- `tools/jwt_scanner.py` — JWT attacks (alg=none, RS256→HS256, kid injection)
+- `tools/proto_pollution_scanner.py` — prototype pollution (client + server-side)
+- `tools/deserial_scanner.py` — deserialization (Java, Python, .NET, PHP, Ruby)
+- `tools/xxe_scanner.py` — XXE (classic, blind, SSRF via XXE)
+- `tools/websocket_scanner.py` — WebSocket IDOR, CSWSH, auth bypass
+- `tools/host_header_scanner.py` — Host header poisoning
+- `tools/timing_scanner.py` — timing side channels
+- `tools/postmessage_scanner.py` — postMessage XSS
+- `tools/css_injection_scanner.py` — CSS injection attacks
+- `tools/esi_scanner.py` — ESI injection
+
+**Kali Integration:**
+- `tools/kali_integration.py` — unified Kali tool orchestrator (40+ tools)
+- `tools/kali_tool_detector.py` — detect installed Kali tools, generate install scripts
+
+**Context & Token Management:**
+- `tools/token_optimizer.py` — token usage analyzer, chunker, summarizer
+- `tools/context_manager.py` — context window manager for long hunt sessions
 
 ### MCP Integrations (in `mcp/`)
 
@@ -81,6 +111,11 @@ claude
 # /hunt target.com
 # /validate   (after finding something)
 # /report     (after validation passes)
+
+# Advanced hunting (v4.0.0+)
+# /exotic target.com      (hunt 35 exotic vuln classes)
+# /kali target.com --profile web    (Kali tools integration)
+# /deep-scan target.com   (network/SSL/DNS deep scanning)
 ```
 
 ## Install Skills
