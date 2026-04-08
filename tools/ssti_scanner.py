@@ -227,15 +227,19 @@ def test_blind_time_based(url: str, params: list[str], rate: float, dry_run: boo
                 continue
             time.sleep(1.0 / rate)
             t0 = time.monotonic()
-            http_get(test_url, timeout=15)
+            status, _, _ = http_get(test_url, timeout=15)
             elapsed = time.monotonic() - t0
-            if elapsed >= delay_threshold:
+            if status == 0:
+                # Network error / timeout — cannot draw conclusions
+                record(f"ssti-blind-{label}-{param}", "ERROR",
+                       f"Request failed (no response) for {label} on param={param}")
+            elif elapsed >= delay_threshold:
                 record(f"ssti-blind-{label}-{param}", "VULNERABLE",
                        f"Response delayed {elapsed:.1f}s ≥ {delay_threshold}s "
                        f"({desc}) param={param}", "HIGH")
             else:
                 record(f"ssti-blind-{label}-{param}", "SAFE",
-                       f"Response time {elapsed:.1f}s — no delay detected")
+                       f"Response time {elapsed:.1f}s — no delay detected (HTTP {status})")
 
 
 def print_payload_table():

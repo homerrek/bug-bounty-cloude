@@ -232,9 +232,13 @@ def test_credential_exposure(url: str, rate: float, dry_run: bool):
                "ACAO reflects attacker origin AND ACAC=true — credentials exposed cross-origin",
                "CRITICAL")
     elif acao == "*" and acac.lower() == "true":
-        # Browsers block this combo but flag as misconfiguration
+        # The CORS spec prohibits ACAO=* alongside ACAC=true; all compliant
+        # browsers will reject this combination and block the response.
+        # Flag as INTERESTING because the server is misconfigured — a future
+        # spec change or non-browser client could exploit it.
         record("credential-exposure", "INTERESTING",
-               "ACAO=* with ACAC=true — browsers block but server is misconfigured", "LOW")
+               "ACAO=* with ACAC=true — violates CORS spec, browsers reject this "
+               "combination, but server is misconfigured", "LOW")
     else:
         record("credential-exposure", "SAFE",
                f"ACAO: {acao or 'not set'}, ACAC: {acac or 'not set'}")

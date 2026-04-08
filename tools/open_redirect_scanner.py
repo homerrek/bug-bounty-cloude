@@ -255,9 +255,10 @@ def test_param_pollution(url: str, rate: float, dry_run: bool):
     # Send the same redirect param twice with conflicting values
     for param in REDIRECT_PARAMS[:4]:
         parsed = urllib.parse.urlparse(url)
-        # Append two conflicting values for the same param
-        qs = (f"{urllib.parse.urlencode({param: EVIL_URL})}"
-              f"&{urllib.parse.urlencode({param: 'https://safe.example.com'})}")
+        # Duplicate param: evil first, safe second — tests first-value-wins
+        qs = urllib.parse.urlencode(
+            [(param, EVIL_URL), (param, "https://safe.example.com")]
+        )
         test_url = urllib.parse.urlunparse(parsed._replace(query=qs))
         if dry_run:
             print(f"  {CYAN}[DRY-RUN]{RESET} HPP: param={param} evil+safe")
@@ -269,9 +270,10 @@ def test_param_pollution(url: str, rate: float, dry_run: bool):
             record(f"open-redirect-hpp-{param}", "VULNERABLE",
                    f"HPP first-value wins: param={param}, {hit}", "HIGH")
 
-        # Also try reversed order (safe first, evil second)
-        qs_rev = (f"{urllib.parse.urlencode({param: 'https://safe.example.com'})}"
-                  f"&{urllib.parse.urlencode({param: EVIL_URL})}")
+        # Reversed order: safe first, evil second — tests last-value-wins
+        qs_rev = urllib.parse.urlencode(
+            [(param, "https://safe.example.com"), (param, EVIL_URL)]
+        )
         test_url_rev = urllib.parse.urlunparse(parsed._replace(query=qs_rev))
         time.sleep(1.0 / rate)
         status, headers, body = http_get(test_url_rev, follow_redirects=False)
