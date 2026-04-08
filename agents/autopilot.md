@@ -116,37 +116,140 @@ For each P1 target endpoint:
 
 1. Check hunt memory — "Have I tested this before?"
 2. Select vuln class based on tech stack + URL pattern + memory
-3. Test with appropriate technique using available scanners:
-   - **XSS**: tools/xss_scanner.py (50+ payloads, context-aware)
-   - **SQLi**: tools/sqli_scanner.py (error/blind/time-based)
-   - **IDOR**: tools/h1_idor_scanner.py
-   - **GraphQL**: tools/graphql_deep_scanner.py
-   - **JWT**: tools/jwt_scanner.py
-   - **SSRF**: nuclei + custom payloads
-   - **Exotic**: All 14 exotic scanners (dependency_confusion, dns_rebinding, etc.)
-   - **Kali Tools**: tools/kali_integration.py (40+ tools)
-4. Log every request to audit.jsonl
-5. If signal found → check chain table (A→B)
-6. If 5 minutes with no progress → rotate to next endpoint
+3. **Run feasibility pre-check BEFORE launching any scanner** (see Feasibility Pre-Checks below)
+4. If feasibility passes, run the appropriate scanner(s)
+5. Log every request to audit.jsonl
+6. If signal found → check chain table (A→B)
+7. If 5 minutes with no progress → rotate to next endpoint
+
+### Feasibility Pre-Checks
+
+Before running ANY scanner, verify that conditions exist for the vulnerability to be present.
+Skip the scanner immediately if the pre-check fails — don't waste time on impossible bugs.
+
+```
+SCANNER               PRE-CHECK (skip if false)
+──────────────────    ──────────────────────────────────────────────────────────────────
+xss_scanner           Response body contains HTML, form inputs, or reflected parameters
+sqli_scanner          URL/body has parameters that are likely DB-backed (not static files)
+jwt_scanner           Auth header contains "Bearer eyJ" or cookie contains a JWT token
+graphql_deep_scanner  /graphql, /api/graphql, or /gql endpoint exists (HEAD request)
+websocket_scanner     Response has "Upgrade: websocket" header or page source has new WebSocket()
+cache_deception       Response has Cache-Control / X-Cache / Vary headers (caching active)
+crlf_scanner          Endpoint performs a redirect (30x response) or reflects headers
+pdf_ssrf_scanner      App has PDF generation feature (URL contains /pdf, /export, /download, /report)
+rate_limit_tester     Endpoint is a state-changing action (login, reset, submit, pay)
+xxe_scanner           App accepts XML Content-Type or has SOAP endpoints (/ws, /service, .asmx)
+deserial_scanner      Stack is Java, .NET, PHP, Ruby, or Python; serialized objects in cookies/body
+proto_pollution       App serves JavaScript bundles; client-side JS uses object merging (lodash etc.)
+dns_rebinding_tester  App makes outbound HTTP requests (SSRF vector, webhook, URL fetch feature)
+dependency_confusion  JS source/package.json references internal package names (@company/, org- prefix)
+esi_scanner           Response headers include Surrogate-Control or X-Cache from Varnish/Squid/nginx
+host_header_scanner   App uses Host header for routing or link generation (multi-tenant, password reset)
+timing_scanner        Auth/lookup endpoint — timing differences between valid/invalid inputs plausible
+postmessage_scanner   Page source has window.addEventListener("message") or postMessage() calls
+css_injection_scanner App reflects user input inside a style attribute or CSS block
+h1_idor_scanner       Auth tokens for two separate accounts are available (requires --token-a + --token-b)
+h1_mutation_idor      GraphQL mutations exist AND two-account credentials are available
+h1_oauth_tester       App has /oauth/, /authorize, or ?client_id= in observed URLs
+h1_race               Endpoint processes a finite resource (bounty payout, coupon use, inventory)
+zero_day_fuzzer       Endpoint has complex business logic with multiple interacting parameters
+zendesk_idor_test     Target runs on Zendesk (zendesk.com subdomain or X-Zendesk header present)
+hai_probe             Target is HackerOne itself (hackerone.com)
+network_scanner       Initial port scan not yet performed on this host
+ssl_scanner           HTTPS endpoint — TLS config not yet checked for this host
+cve_hunter            Tech stack not yet fingerprinted for this target
+```
 
 ### Scanner Selection Logic
+
 ```python
-# Choose scanner based on URL pattern and tech stack
+# 0. Always start with tech fingerprinting and CVE check (once per target)
+if not tech_fingerprinted:
+    run_cve_hunter(target)          # detect stack → check known CVEs
+    run_mindmap(target, tech_stack) # generate attack checklist
+    tech_fingerprinted = True
+
+# 1. Every endpoint — host-level checks (run once per host, not per URL)
+if host not in checked_hosts:
+    run_ssl_scanner(host)           # pre-check: HTTPS
+    run_network_scanner(host)       # pre-check: always for new host
+    run_host_header_scanner(host)   # pre-check: always — low noise
+    checked_hosts.add(host)
+
+# 2. Parameterized URLs (injection surface)
 if "?" in url and "=" in url:
-    # Parameterized URL - test injection vulnerabilities
-    run_xss_scanner(url)
-    run_sqli_scanner(url)
-elif "/api/" in url or "/graphql" in url:
-    # API endpoint - test API-specific vulnerabilities
-    run_graphql_scanner(url)
-    run_idor_scanner(url)
-    run_jwt_scanner(url)
-elif url.endswith(".js") or "/static/" in url:
-    # JavaScript - check for secrets, dependencies
-    run_dependency_scanner(url)
-else:
-    # Generic endpoint - run full suite
-    run_exotic_scanners(url)
+    if html_in_response(url):
+        run_xss_scanner(url)        # pre-check: HTML in response
+    if param_looks_db_backed(url):
+        run_sqli_scanner(url)       # pre-check: non-static params
+    if has_redirect(url):
+        run_crlf_scanner(url)       # pre-check: 30x response
+    if reflects_input(url):
+        run_css_injection_scanner(url)  # pre-check: input reflected in style
+
+# 3. API endpoints
+if "/api/" in url or "/graphql" in url or "/gql" in url:
+    if endpoint_exists(url, "/graphql"):
+        run_graphql_deep_scanner(url)   # pre-check: graphql exists
+    if has_jwt_in_auth():
+        run_jwt_scanner(url)            # pre-check: JWT token present
+    if two_accounts_available():
+        run_h1_idor_scanner(url)        # pre-check: two auth tokens
+        run_h1_mutation_idor(url)       # pre-check: graphql + two tokens
+    run_timing_scanner(url)             # pre-check: auth endpoint
+
+# 4. Auth / OAuth flows
+if "/oauth" in url or "/authorize" in url or "client_id" in url:
+    run_h1_oauth_tester(url)            # pre-check: oauth endpoints
+
+# 5. State-changing endpoints (rate limits, races)
+if is_state_changing(url):
+    run_rate_limit_tester(url)          # pre-check: state-changing action
+    if is_finite_resource(url):
+        run_h1_race(url)                # pre-check: finite resource
+
+# 6. File / download / export endpoints
+if any(x in url for x in ["/pdf", "/export", "/download", "/report", "/invoice"]):
+    run_pdf_ssrf_scanner(url)           # pre-check: PDF generation endpoint
+
+# 7. JavaScript files
+if url.endswith(".js") or "/static/" in url or "/assets/" in url:
+    run_dependency_confusion_scanner(url)  # pre-check: JS with internal packages
+    run_proto_pollution_scanner(url)       # pre-check: JS bundle
+
+# 8. WebSocket detection (from page source)
+if has_websocket(url):
+    run_websocket_scanner(url)          # pre-check: WebSocket in page
+
+# 9. postMessage detection (from page source)
+if has_postmessage_listener(url):
+    run_postmessage_scanner(url)        # pre-check: message listener
+
+# 10. Outbound request / SSRF surface
+if has_url_parameter(url) or has_webhook_feature():
+    run_dns_rebinding_tester(url)       # pre-check: outbound HTTP possible
+
+# 11. XML / SOAP endpoints
+if accepts_xml(url) or ".asmx" in url or "/ws" in url:
+    run_xxe_scanner(url)                # pre-check: XML input accepted
+
+# 12. Serialization surface
+if has_serialized_object_in_cookies() or stack_is_java_dotnet():
+    run_deserial_scanner(url)           # pre-check: serialized data present
+
+# 13. Caching layer
+if has_caching_headers(url):
+    run_cache_deception_scanner(url)    # pre-check: caching active
+    if has_esi_header(url):
+        run_esi_scanner(url)            # pre-check: Varnish/Squid/nginx
+
+# 14. Complex business logic — use fuzzer after other scanners pass
+if is_complex_business_logic(url) and not memory.already_fuzzed(url):
+    run_zero_day_fuzzer(url)            # pre-check: complex multi-param logic
+
+# 15. Kali tools — supplement on all endpoints after primary scanners
+run_kali_integration(url, profile="web")
 ```
 
 ### Token Optimization
