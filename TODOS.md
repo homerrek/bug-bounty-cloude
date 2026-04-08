@@ -99,6 +99,43 @@ Items deferred from the MCP-First Bionic Hunter design review (2026-03-24).
 
 ---
 
-## Active TODOs (None)
+## ~~TODO-7: v4.2.0 Feature Set~~ ✅ RESOLVED (2026-04-08)
 
-All items resolved or deferred.
+**Resolution:** Implemented all v4.2.0 components:
+
+### Part 1: New Vulnerability Scanners ✅
+- ✅ `tools/cors_scanner.py` — 6 CORS test vectors (origin reflection, null origin, subdomain wildcard, pre-flight, credential exposure, internal network)
+- ✅ `tools/ssti_scanner.py` — Universal probe + 10 engine-specific payloads (Jinja2, Twig, Freemarker, ERB, Spring EL, Thymeleaf, EJS, Pug, Handlebars, Mako) + WAF bypass + blind detection
+- ✅ `tools/open_redirect_scanner.py` — 18 params, 30+ bypass techniques, OAuth chain detection, full redirect chain following
+
+### Part 2: Token Optimization Enhancements ✅
+- ✅ `tools/token_optimizer.py` — `--dedup` (Jaccard similarity), `--compress` (strip comments/blanks/docstrings), `--budget N` (priority-ordered file selection), improved `estimate_tokens()` (hybrid char+word)
+
+### Part 3: Context Manager Enhancements ✅
+- ✅ `tools/context_manager.py` — `--auto-compact` (triggers at 80%), `--snapshot`/`--restore`/`--diff` (named snapshots), `get_item_content()` (lazy loading), `get_item_metadata_only()`
+
+### Part 4: Integrity Testing ✅
+- ✅ `tests/test_new_scanners.py` — 15 tests for 3 new scanners
+- ✅ `tests/test_token_optimizer_enhanced.py` — 13 tests for new token_optimizer features
+- ✅ `tests/test_context_manager_enhanced.py` — 12 tests for new context_manager features
+- ✅ `tests/test_core_integrity.py` — 16 tests: imports, CLI help, memory modules, test count
+
+### Part 5: Documentation Updates ✅
+- ✅ `skills/exotic-vulns/SKILL.md` — Added classes 56 (CORS), 57 (SSTI), 58 (Open Redirect)
+- ✅ `commands/exotic.md` — Scanner table updated 14 → 17 scanners
+- ✅ `CLAUDE.md` — New scanners added to tool lists
+- ✅ `CHANGELOG.md` — v4.2.0 entry
+- ✅ `README.md` — v4.2.0 badge, statistics, What's New section
+- ✅ `TODOS.md` — This entry
+
+**Statistics:**
+- Scanners: 14 exotic → 17 exotic (+3); Web scanners: 7 → 10 (+3)
+- Bug classes: 55 web2 → 58 web2 (+3 new exotic classes)
+- Tools: 29 → 32 (+3)
+- Tests: 211 → 267 (+56 new tests)
+
+**Source:** v4.2.0 development plan (2026-04-08)
+
+---
+
+## Active TODOs (None)

@@ -56,7 +56,10 @@ class ContextManager:
         """Load session context from disk"""
         if self.context_file.exists():
             with open(self.context_file, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+            for item in data.get("items", []):
+                item["_content_loaded"] = True
+            return data
         else:
             return {
                 "session_name": self.session_name,
@@ -74,7 +77,7 @@ class ContextManager:
         with open(self.context_file, 'w') as f:
             json.dump(self.context, f, indent=2)
 
-    def add_item(self, content, item_type="finding", priority="medium", metadata=None):
+    def add_item(self, content, item_type="finding", priority="medium", metadata=None, auto_compact=False):
         """Add an item to context"""
         from tools.token_optimizer import estimate_tokens
 
@@ -98,6 +101,12 @@ class ContextManager:
         self._save_context()
 
         print(f"{GREEN}[ADDED]{RESET} {item_type} ({tokens:,} tokens, priority: {priority})")
+
+        if auto_compact:
+            usage_pct = (self.context["total_tokens"] / AVAILABLE_CONTEXT) * 100
+            if usage_pct > 80:
+                self.compact()
+
         return item["id"]
 
     def remove_item(self, item_id):
@@ -251,6 +260,80 @@ class ContextManager:
 
         return summary
 
+    def save_snapshot(self, name):
+        """Save current context as a named snapshot"""
+        snapshots_dir = self.session_dir / "snapshots"
+        snapshots_dir.mkdir(exist_ok=True)
+        snap_path = snapshots_dir / f"{name}.json"
+        with open(snap_path, 'w') as f:
+            json.dump(self.context, f, indent=2)
+        print(f"[SNAPSHOT] Saved: {name}")
+
+    def restore_snapshot(self, name):
+        """Restore context from a named snapshot"""
+        snap_path = self.session_dir / "snapshots" / f"{name}.json"
+        if not snap_path.exists():
+            print(f"{RED}[ERROR] Snapshot not found: {name}{RESET}")
+            return
+        with open(snap_path, 'r') as f:
+            self.context = json.load(f)
+        self._save_context()
+        print(f"[RESTORED] {name}")
+
+    def diff_snapshots(self, name_a, name_b):
+        """Diff two named snapshots, reporting added/removed/changed items"""
+        snap_dir = self.session_dir / "snapshots"
+        for name in (name_a, name_b):
+            if not (snap_dir / f"{name}.json").exists():
+                print(f"{RED}[ERROR] Snapshot not found: {name}{RESET}")
+                return {"added": [], "removed": [], "changed": []}
+        with open(snap_dir / f"{name_a}.json", 'r') as f:
+            data_a = json.load(f)
+        with open(snap_dir / f"{name_b}.json", 'r') as f:
+            data_b = json.load(f)
+
+        items_a = {item["id"]: item for item in data_a.get("items", [])}
+        items_b = {item["id"]: item for item in data_b.get("items", [])}
+
+        added = [items_b[i] for i in items_b if i not in items_a]
+        removed = [items_a[i] for i in items_a if i not in items_b]
+        changed = []
+        for i in items_a:
+            if i in items_b and items_a[i].get("priority") != items_b[i].get("priority"):
+                changed.append({
+                    "id": i,
+                    "priority_before": items_a[i].get("priority"),
+                    "priority_after": items_b[i].get("priority"),
+                })
+
+        print(f"\n{BOLD}Snapshot Diff: {name_a} → {name_b}{RESET}")
+        print(f"  {GREEN}Added:{RESET}   {len(added)} item(s)")
+        for item in added:
+            print(f"    + [{item['id']}] {item['type']} ({item['priority']})")
+        print(f"  {RED}Removed:{RESET} {len(removed)} item(s)")
+        for item in removed:
+            print(f"    - [{item['id']}] {item['type']} ({item['priority']})")
+        print(f"  {YELLOW}Changed:{RESET} {len(changed)} item(s)")
+        for c in changed:
+            print(f"    ~ [{c['id']}] {c['priority_before']} → {c['priority_after']}")
+
+        return {"added": added, "removed": removed, "changed": changed}
+
+    def get_item_content(self, item_id):
+        """Return content for a specific item by id, or None if not found"""
+        for item in self.context["items"]:
+            if item["id"] == item_id:
+                return item["content"]
+        return None
+
+    def get_item_metadata_only(self):
+        """Return items without their content field (simulates lazy loading for display)"""
+        result = []
+        for item in self.context["items"]:
+            meta = {k: v for k, v in item.items() if k != "content"}
+            result.append(meta)
+        return result
+
 
 def main():
     parser = argparse.ArgumentParser(description="Context window manager for bug hunting")
@@ -264,6 +347,10 @@ def main():
     parser.add_argument("--prioritize", action="store_true", help="Re-prioritize items")
     parser.add_argument("--export", help="Export context to JSON file")
     parser.add_argument("--summary", action="store_true", help="Print compact summary")
+    parser.add_argument("--auto-compact", action="store_true", help="Auto-compact when adding if usage > 80%%")
+    parser.add_argument("--snapshot", metavar="NAME", help="Save named snapshot of current context")
+    parser.add_argument("--restore", metavar="NAME", help="Restore context from named snapshot")
+    parser.add_argument("--diff", nargs=2, metavar=("NAME_A", "NAME_B"), help="Diff two snapshots")
     args = parser.parse_args()
 
     cm = ContextManager(args.session)
@@ -272,7 +359,8 @@ def main():
         try:
             with open(args.add, 'r') as f:
                 content = f.read()
-            cm.add_item(content, item_type=args.type, priority=args.priority)
+            cm.add_item(content, item_type=args.type, priority=args.priority,
+                        auto_compact=args.auto_compact)
         except Exception as e:
             print(f"{RED}[ERROR] {e}{RESET}")
 
@@ -294,6 +382,15 @@ def main():
     elif args.summary:
         summary = cm.summarize()
         print(json.dumps(summary, indent=2))
+
+    elif args.snapshot:
+        cm.save_snapshot(args.snapshot)
+
+    elif args.restore:
+        cm.restore_snapshot(args.restore)
+
+    elif args.diff:
+        cm.diff_snapshots(args.diff[0], args.diff[1])
 
     else:
         parser.print_help()

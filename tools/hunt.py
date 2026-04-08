@@ -2,6 +2,7 @@
 """
 Bug Bounty Hunt Orchestrator
 Main script that chains target selection, recon, scanning, and reporting.
+Includes exotic vuln scanning (CORS, SSTI, open redirect, and 14 more).
 
 Usage:
     python3 hunt.py                         # Full pipeline: select targets + hunt
@@ -9,6 +10,10 @@ Usage:
     python3 hunt.py --quick --target <domain>  # Quick scan mode
     python3 hunt.py --recon-only --target <domain>  # Only run recon
     python3 hunt.py --scan-only --target <domain>   # Only run vuln scanner (requires prior recon)
+    python3 hunt.py --exotic --target <domain>      # + exotic scanners (core 3: cors, ssti, open_redirect)
+    python3 hunt.py --exotic quick --target <domain> # + 6 exotic scanners
+    python3 hunt.py --exotic deep --target <domain>  # + all 17 exotic scanners
+    python3 hunt.py --exotic off --target <domain>   # skip exotic phase
     python3 hunt.py --status                # Show current progress
     python3 hunt.py --setup-wordlists       # Download common wordlists
     python3 hunt.py --cve-hunt --target <domain>   # Run CVE hunter
@@ -337,8 +342,102 @@ def run_zero_day_fuzzer(domain, deep=False):
         return False
 
 
-def hunt_target(domain, quick=False, recon_only=False, scan_only=False, cve_hunt=False, zero_day=False):
-    """Run the full hunt pipeline on a single target."""
+def run_exotic_scan(domain, profile="core", quick=False):
+    """Run exotic vulnerability scanners on a target.
+
+    profile: "core" (cors+ssti+open_redirect), "quick" (core + 3 more), "deep" (all 17)
+    """
+    target_url = f"https://{domain}"
+    recon_dir = os.path.join(RECON_DIR, domain)
+    findings_dir = os.path.join(FINDINGS_DIR, "exotic", domain)
+    os.makedirs(findings_dir, exist_ok=True)
+
+    log("info", f"Running exotic scanners on {domain} [profile={profile}]...")
+
+    # Core 3 — always run
+    core_scanners = [
+        ("cors_scanner.py",          f'--target "{target_url}" --json --rate 1.0'),
+        ("ssti_scanner.py",          f'--target "{target_url}" --json --rate 1.0'),
+        ("open_redirect_scanner.py", f'--target "{target_url}" --json --rate 1.0'),
+    ]
+
+    # Quick extras — added on top of core 3 with --exotic quick
+    quick_scanners = [
+        ("jwt_scanner.py",              f'--url "{target_url}" --json'),
+        ("host_header_scanner.py",      f'--url "{target_url}" --json'),
+        ("dependency_confusion_scanner.py", f'--target "{domain}" --json'),
+    ]
+
+    # Full exotic suite — only with --exotic deep
+    deep_scanners = [
+        ("proto_pollution_scanner.py",  f'--url "{target_url}" --json'),
+        ("graphql_deep_scanner.py",     f'--url "{target_url}/graphql" --json'),
+        ("xxe_scanner.py",              f'--url "{target_url}" --json'),
+        ("deserial_scanner.py",         f'--url "{target_url}" --json'),
+        ("websocket_scanner.py",        f'--url "wss://{domain}" --json'),
+        ("timing_scanner.py",           f'--url "{target_url}" --json'),
+        ("postmessage_scanner.py",      f'--url "{target_url}" --json'),
+        ("css_injection_scanner.py",    f'--url "{target_url}" --json'),
+        ("esi_scanner.py",              f'--url "{target_url}" --json'),
+        ("ssl_scanner.py",              f'--host "{domain}" --json'),
+        ("dns_rebinding_tester.py",     f'--target "{target_url}" --json'),
+        ("network_scanner.py",          f'--host "{domain}" --json'),
+        ("crlf_scanner.py",             f'--url "{target_url}" --json'),
+        ("rate_limit_tester.py",        f'--url "{target_url}" --json'),
+    ]
+
+    # Select scanners based on profile
+    if profile == "core":
+        scanners = core_scanners
+    elif profile == "quick":
+        scanners = core_scanners + quick_scanners
+    elif profile == "deep":
+        scanners = core_scanners + quick_scanners + deep_scanners
+    else:
+        log("warn", f"Unknown exotic profile '{profile}', using 'core'")
+        scanners = core_scanners
+
+    ran, failed = 0, 0
+    for scanner_file, scanner_args in scanners:
+        scanner_path = os.path.join(TOOLS_DIR, scanner_file)
+        if not os.path.exists(scanner_path):
+            log("warn", f"Scanner not found, skipping: {scanner_file}")
+            continue
+
+        scanner_name = scanner_file.replace(".py", "")
+        out_file = os.path.join(findings_dir, f"{scanner_name}.json")
+        cmd = f'python3 "{scanner_path}" {scanner_args} > "{out_file}" 2>&1'
+
+        log("info", f"  [{scanner_name}]...")
+        success, _ = run_cmd(cmd, timeout=120 if quick else 300)
+        if success:
+            ran += 1
+        else:
+            failed += 1
+            log("warn", f"  [{scanner_name}] finished with non-zero exit (check {out_file})")
+
+    log("ok", f"Exotic scan complete — {ran} scanners ran, {failed} had issues")
+    log("info", f"Results in: {findings_dir}/")
+    return ran > 0
+
+
+def hunt_target(domain, quick=False, recon_only=False, scan_only=False,
+                cve_hunt=False, zero_day=False, exotic_profile="core"):
+    """Run the full hunt pipeline on a single target.
+
+    Args:
+        domain: Target domain to hunt.
+        quick: Enable quick scan mode (fewer checks, shorter timeouts).
+        recon_only: Stop after recon phase.
+        scan_only: Skip recon, run vuln scan only (requires prior recon output).
+        cve_hunt: Also run CVE hunter after vuln scan.
+        zero_day: Also run zero-day fuzzer (high false positive rate, manual review needed).
+        exotic_profile: Exotic scanner suite to run after standard vuln scan.
+            'core'  — cors, ssti, open_redirect (default, ~3-5 min).
+            'quick' — core + jwt, host_header, dependency_confusion (~5-10 min).
+            'deep'  — all 17 exotic scanners (~20-30 min).
+            'off'   — skip exotic phase entirely.
+    """
     result = {"domain": domain, "success": True, "recon": False, "scan": False, "reports": 0}
 
     if not scan_only:
@@ -351,6 +450,10 @@ def hunt_target(domain, quick=False, recon_only=False, scan_only=False, cve_hunt
 
     check_cicd_results(domain)
     result["scan"] = run_vuln_scan(domain, quick=quick)
+
+    # Exotic scanning (core 3 by default, configurable profile)
+    if exotic_profile and exotic_profile != "off":
+        run_exotic_scan(domain, profile=exotic_profile, quick=quick)
 
     # CVE hunting (only when explicitly requested)
     if cve_hunt:
@@ -388,6 +491,9 @@ Examples:
     parser.add_argument("--setup-wordlists", action="store_true", help="Download wordlists")
     parser.add_argument("--cve-hunt", action="store_true", help="Run CVE hunter")
     parser.add_argument("--zero-day", action="store_true", help="Run zero-day fuzzer")
+    parser.add_argument("--exotic", metavar="PROFILE", nargs="?", const="core",
+                        choices=["core", "quick", "deep", "off"],
+                        help="Run exotic vuln scanners: core (default), quick, deep, or off")
     parser.add_argument("--select-targets", action="store_true", help="Only run target selection")
     parser.add_argument("--top", type=int, default=10, help="Number of targets to select")
     args = parser.parse_args()
@@ -445,7 +551,8 @@ Examples:
             recon_only=args.recon_only,
             scan_only=args.scan_only,
             cve_hunt=args.cve_hunt,
-            zero_day=args.zero_day
+            zero_day=args.zero_day,
+            exotic_profile=args.exotic or "core"
         )
         print_dashboard([result])
         return
@@ -477,7 +584,7 @@ Examples:
         log("info", f"  Domain: {primary_domain}")
         log("info", f"  Program: {target.get('url', 'N/A')}")
 
-        result = hunt_target(primary_domain, quick=args.quick)
+        result = hunt_target(primary_domain, quick=args.quick, exotic_profile=args.exotic or "core")
         results.append(result)
 
     print_dashboard(results)

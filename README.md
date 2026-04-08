@@ -4,7 +4,7 @@
 
 <div align="center">
 
-<img src="https://img.shields.io/badge/v4.0.0-Exotic_Vulns_%2B_Kali-blueviolet?style=for-the-badge" alt="v4.0.0">
+<img src="https://img.shields.io/badge/v4.2.0-New_Scanners_%2B_Optimizations-blueviolet?style=for-the-badge" alt="v4.2.0">
 
 # Claude Bug Bounty
 
@@ -19,7 +19,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-3776AB.svg?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-129_passing-brightgreen.svg?style=flat-square)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-267_passing-brightgreen.svg?style=flat-square)](tests/)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-D97706.svg?style=flat-square&logo=anthropic&logoColor=white)](https://claude.ai/claude-code)
 
 <br>
@@ -30,7 +30,7 @@
 
 ```
   16 commands  ·  7 AI agents  ·  9 skill domains
-  55 web2 vuln classes  ·  10 web3 bug classes
+  58 web2 vuln classes  ·  10 web3 bug classes
   Burp MCP  ·  HackerOne MCP  ·  Kali Integration  ·  Autonomous Mode
   60% smaller prompt footprint — same coverage, faster sessions
 ```
@@ -64,11 +64,12 @@ Claude Bug Bounty is an **agent harness** — not just scripts. It reasons about
 
 | Before | After |
 |:---|:---|
-| Run scripts manually, hope for the best | AI orchestrates 25+ tools in the right order |
+| Run scripts manually, hope for the best | AI orchestrates 32+ tools in the right order |
 | Write reports from scratch (45 min each) | Report-writer agent generates submission-ready reports in 60s |
 | Forget what worked last month | Persistent memory — patterns from target A inform target B |
 | Can't see live traffic from Claude | Burp MCP integration — Claude reads your proxy history |
-| Hunt one endpoint at a time | `/autopilot` runs full hunt loops with safety checkpoints |
+| Hunt one endpoint at a time | `/autopilot` runs standard + exotic hunt loops with safety checkpoints |
+| Miss exotic vulns (CORS, SSTI, open redirect) | 17 exotic scanners run automatically in autopilot |
 
 </div>
 
@@ -102,15 +103,16 @@ claude                          # Start Claude Code
 **Step 3 — Go Autonomous** *(new in v3)*
 
 ```bash
-/autopilot target.com --normal  # Full autonomous hunt loop
-/intel target.com               # Fetch CVE + disclosure intel
-/resume target.com              # Pick up where you left off
+/autopilot target.com --normal           # Full autonomous hunt loop (standard + exotic)
+/autopilot target.com --normal --exotic deep  # + all 17 exotic scanners
+/intel target.com                        # Fetch CVE + disclosure intel
+/resume target.com                       # Pick up where you left off
 ```
 
 **Step 4 — Hunt Exotic Vulns & Kali Tools** *(new in v4)*
 
 ```bash
-/exotic target.com              # Hunt 35 exotic vuln classes with 14 scanners
+/exotic target.com              # Hunt 38 exotic vuln classes with 17 scanners
 /kali target.com --profile web  # Kali Linux tools integration (40+ tools)
 /deep-scan target.com           # Deep network/SSL/DNS scanning
 ```
@@ -185,7 +187,8 @@ Each stage feeds the next. Claude orchestrates everything, or you run any stage 
 
 | Command | What It Does |
 |:---|:---|
-| `/autopilot target.com` | Full autonomous hunt loop with safety checkpoints |
+| `/autopilot target.com` | Full autonomous hunt loop — standard + exotic vuln coverage |
+| `/autopilot target.com --exotic deep` | Autopilot with all 17 exotic scanners |
 | `/surface target.com` | AI-ranked attack surface from recon + memory |
 | `/resume target.com` | Resume previous hunt — shows what's untested |
 | `/remember` | Save finding or pattern to persistent memory |
@@ -195,7 +198,7 @@ Each stage feeds the next. Claude orchestrates everything, or you run any stage 
 
 | Command | What It Does |
 |:---|:---|
-| `/exotic target.com` | Hunt 35 exotic vuln classes with 14 specialized scanners |
+| `/exotic target.com` | Hunt 38 exotic vuln classes with 17 specialized scanners |
 | `/kali target.com --profile web` | Kali Linux tools integration (40+ tools: nmap, nikto, sqlmap, ...) |
 | `/deep-scan target.com` | Deep network/SSL/DNS rebinding scanning with custom Python tools |
 
@@ -218,6 +221,41 @@ Each stage feeds the next. Claude orchestrates everything, or you run any stage 
 | **chain-builder** | Systematic A-B-C exploit chaining | Sonnet |
 | **autopilot** | Autonomous hunt loop with circuit breaker | Sonnet |
 | **recon-ranker** | Attack surface ranking from recon + memory | Haiku *(fast)* |
+
+<br>
+
+---
+
+<br>
+
+## What's New in v4.2.0
+
+> **3 new scanners. Smarter token optimization. 56 new tests.**
+
+<details>
+<summary><b>New Scanners: CORS, SSTI, Open Redirect</b></summary>
+<br>
+
+Three new Python scanners, zero new dependencies (stdlib only):
+
+- **`cors_scanner.py`** — 6 CORS test vectors: origin reflection, null origin (sandboxed iframe), subdomain wildcard, pre-flight bypass, credential exposure (CRITICAL), internal network origins
+- **`ssti_scanner.py`** — Universal SSTI probe + 10 engine-specific payloads (Jinja2, Twig, Freemarker, ERB, Spring EL, Thymeleaf, EJS, Pug, Handlebars, Mako) + WAF bypass variants + blind time-based detection
+- **`open_redirect_scanner.py`** — 18 redirect parameters, 30+ bypass techniques (protocol-relative, backslash, at-sign, encoding, fragment, parameter pollution), OAuth `redirect_uri` chain detection
+
+</details>
+
+<details>
+<summary><b>Token Optimizer + Context Manager Enhancements</b></summary>
+<br>
+
+- **`--dedup`**: Find near-duplicate files (>80% Jaccard similarity) in a directory
+- **`--compress`**: Strip comments/blanks/docstrings from files for context-efficient loading
+- **`--budget N`**: Auto-select highest-priority files that fit within N tokens
+- **Improved `estimate_tokens()`**: Hybrid char+word estimate for better BPE accuracy
+- **`--auto-compact`**: Auto-compact context when usage hits 80%
+- **`--snapshot` / `--restore` / `--diff`**: Named context snapshots for branching hunt sessions
+
+</details>
 
 <br>
 
@@ -258,15 +296,15 @@ Canonical sources kept intact and unchanged: `rules/hunting.md`, `rules/reportin
 
 ## What's New in v4.0.0
 
-> **The bionic hacker gets 35 more weapons.**
+> **The bionic hacker gets 38 more weapons.**
 
 <details>
-<summary><b>35 Exotic Vulnerability Classes</b> — <code>/exotic</code></summary>
+<summary><b>38 Exotic Vulnerability Classes</b> — <code>/exotic</code></summary>
 <br>
 
-New skill (`skills/exotic-vulns/`) covering vuln classes 21–55: JWT attacks, prototype pollution, deserialization, XXE, WebSockets, HTTP/2 desync, DNS rebinding, CORS deep, LDAP injection, NoSQL expanded, CRLF, cache deception, postMessage XSS, CSS injection, ESI injection, PDF SSRF, dependency confusion, and more.
+New skill (`skills/exotic-vulns/`) covering vuln classes 21–58: JWT attacks, prototype pollution, deserialization, XXE, WebSockets, HTTP/2 desync, DNS rebinding, CORS deep, LDAP injection, NoSQL expanded, CRLF, cache deception, postMessage XSS, CSS injection, ESI injection, PDF SSRF, dependency confusion, CORS misconfiguration, SSTI, open redirect, and more.
 
-Profiles: `--profile quick` (6 scanners, 5–10 min), `--profile deep` (all 14, 20–30 min), `--scanner <name>` (single scanner).
+Profiles: `--profile quick` (6 scanners, 5–10 min), `--profile deep` (all 17, 20–30 min), `--scanner <name>` (single scanner).
 
 </details>
 
@@ -325,14 +363,20 @@ Combined with the v4.1.0 token-optimized architecture (60% smaller prompt footpr
 <summary><b>Autonomous Hunt Loop</b> — <code>/autopilot</code></summary>
 <br>
 
-7-step loop that runs continuously: **scope - recon - rank - hunt - validate - report - checkpoint**
+8-step loop that runs continuously: **scope - recon - rank - hunt - exotic - validate - report - checkpoint**
 
 Three checkpoint modes:
 - `--paranoid` — stops after every finding for your review
 - `--normal` — batches findings, checkpoints every few minutes
 - `--yolo` — minimal stops (still requires approval for report submissions)
 
-Built-in safety: circuit breaker stops hammering hosts after consecutive failures, per-host rate limiting, every request logged to `audit.jsonl`.
+Exotic scanning profiles (v4.2):
+- *(default)* — CORS + SSTI + open redirect (3-5 min extra, always on)
+- `--exotic quick` — + JWT, host header, dependency confusion
+- `--exotic deep` — all 17 exotic scanners
+- `--exotic off` — standard hunt only
+
+Built-in safety: circuit breaker stops hammering hosts after consecutive failures, per-host rate limiting, every request logged to `audit.jsonl`, context auto-snapshotted before exotic phase.
 
 </details>
 
@@ -422,7 +466,7 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 </details>
 
 <details>
-<summary><b>35 Exotic Web2 Bug Classes</b> *(new in v4)* — click to expand</summary>
+<summary><b>38 Exotic Web2 Bug Classes</b> *(new in v4)* — click to expand</summary>
 <br>
 
 | Class | Key Techniques | Typical Payout |
@@ -462,6 +506,9 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 | **Mass Assignment** | Hidden fields, JSON extra keys, admin privilege escalation | $500 - $10K |
 | **Path Traversal (Advanced)** | Unicode bypass, null byte, double-encode, zip-slip | $500 - $10K |
 | **WebSocket IDOR (Advanced)** | Privileged channel access, session fixation via WS | $1K - $10K |
+| **CORS Misconfiguration** | Origin reflection, null origin, credential exposure, pre-flight bypass | $500 - $5K |
+| **SSTI / Template Injection** | Jinja2/Twig/Freemarker/ERB/Spring EL → RCE; 10 engines detected | $2K - $20K |
+| **Open Redirect** | 18 params, 30+ bypass techniques, OAuth redirect_uri chain | $200 - $3K |
 
 </details>
 
@@ -498,7 +545,7 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 
 | Tool | What It Does |
 |:---|:---|
-| `hunt.py` | Master orchestrator — chains recon, scan, report |
+| `hunt.py` | Master orchestrator — chains recon, scan, exotic scan, report (`--exotic core/quick/deep/off`) |
 | `recon_engine.sh` | Subdomain enum + DNS + live hosts + URL crawl |
 | `learn.py` | CVE + disclosure intel from NVD, GitHub Advisory, HackerOne |
 | `intel_engine.py` | Memory-aware intel wrapper (learn.py + HackerOne MCP + memory) |
@@ -534,6 +581,9 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 | `crlf_scanner.py` | CRLF injection + response splitting |
 | `cache_deception_scanner.py` | Web cache deception attacks |
 | `rate_limit_tester.py` | Rate limit bypass techniques |
+| `cors_scanner.py` | CORS misconfiguration (6 test vectors, credential exposure) *(new in v4.2)* |
+| `ssti_scanner.py` | SSTI detection (10 engines, WAF bypass, blind time-based) *(new in v4.2)* |
+| `open_redirect_scanner.py` | Open redirect (18 params, 30+ bypass techniques, OAuth chain) *(new in v4.2)* |
 
 </details>
 
@@ -543,6 +593,9 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 
 | Tool | Target |
 |:---|:---|
+| `cors_scanner.py` | CORS misconfiguration (origin reflection, null origin, credential exposure) |
+| `ssti_scanner.py` | SSTI (Jinja2, Twig, Freemarker, ERB, Spring EL, Thymeleaf, EJS, Pug, Handlebars, Mako) |
+| `open_redirect_scanner.py` | Open redirect (18 params, 30+ bypass techniques, OAuth redirect_uri) |
 | `dependency_confusion_scanner.py` | Internal package hijacking (npm, PyPI, RubyGems, Go) |
 | `graphql_deep_scanner.py` | Introspection, batching, nested DoS, mutations |
 | `ssl_scanner.py` | SSL/TLS config, certs, ciphers, protocol versions |

