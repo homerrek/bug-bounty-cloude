@@ -1,5 +1,53 @@
 # Changelog
 
+## v4.0.0 — Exotic Vulns + Kali Integration + Context Optimization (Apr 2026)
+
+### Major: Exotic Vulnerability Hunting (35 Bug Classes)
+- **New Skill**: `skills/exotic-vulns/SKILL.md` — 35 exotic vuln classes (21-55): JWT attacks, prototype pollution, deserialization, XXE, WebSockets, HTTP/2 desync, DNS rebinding, CORS deep, insecure randomness, LDAP injection, NoSQL expanded, rate limit bypass advanced, clickjacking advanced, CRLF injection, web cache deception, server-side prototype pollution, postMessage XSS, CSS injection, dangling markup, ESI injection, PDF SSRF, email header injection, subdomain delegation takeover, OAuth token theft via Referer, timing side channels, integer overflow, ReDoS, host header poisoning expanded, GraphQL deep, dependency confusion, client-side desync, HTTP parameter pollution, mass assignment, path traversal expanded, WebSocket IDOR
+
+### Added — 14 Exotic Vulnerability Scanners
+- **`tools/dependency_confusion_scanner.py`**: Detects internal packages vulnerable to hijacking via public registries (npm, PyPI, RubyGems). Scans package.json, requirements.txt, Gemfile, go.mod. Identifies internal naming patterns and checks public registry availability.
+- **`tools/graphql_deep_scanner.py`**: 8 GraphQL attack vectors — introspection enabled, field suggestions, batch query attacks, nested query DoS, alias-based rate limit bypass, circular fragments DoS, directive abuse, mutations without auth.
+- **`tools/ssl_scanner.py`**: SSL/TLS configuration scanner — certificate validity/expiration, chain verification, SAN validation, protocol versions (SSLv2/v3, TLS 1.0-1.3), cipher suites, key strength, compression (CRIME).
+- **`tools/network_scanner.py`**: Port scanning, service detection, banner grabbing. Tests for dangerous services (FTP, Telnet, RDP, Redis, MongoDB, Elasticsearch), version disclosure, unauthenticated access (Redis `INFO` command, MongoDB connection test).
+- **`tools/dns_rebinding_tester.py`**: DNS rebinding attack detector — localhost/127.0.0.1 bypass in URL params, Host header manipulation, multiple IP resolution (round-robin DNS), internal service probing, cloud metadata access (AWS, GCP).
+- **Existing scanners integrated**: `jwt_scanner.py`, `proto_pollution_scanner.py`, `deserial_scanner.py`, `xxe_scanner.py`, `websocket_scanner.py`, `host_header_scanner.py`, `timing_scanner.py`, `postmessage_scanner.py`, `css_injection_scanner.py`, `esi_scanner.py`
+
+### Added — Kali Linux Integration
+- **`tools/kali_integration.py`**: Unified orchestrator for 40+ Kali security tools. Pre-configured tool profiles (web, network, webapp, password, enumeration, full). Automatic output parsing and finding aggregation. Supports: nmap, nikto, dirb, gobuster, sqlmap, whatweb, wpscan, masscan, enum4linux, hydra, john, hashcat, burpsuite, zaproxy.
+- **`tools/kali_tool_detector.py`**: Detects installed Kali tools, checks versions, validates configurations. Generates installation scripts for missing tools. Supports apt (Debian/Ubuntu/Kali), Go install, and custom installers. Tool health checker with priority flags (CRITICAL/HIGH/MEDIUM/LOW).
+- **`install_tools.sh`**: Added `--with-kali-tools` flag to install Kali integration scripts to `/usr/local/bin` or `~/bin`.
+
+### Added — Context & Token Management
+- **`tools/token_optimizer.py`**: Token usage analyzer and optimizer. Features: directory analysis (top token consumers), file chunking (splits large files into safe chunks), content prioritization (CRITICAL/HIGH/MEDIUM/LOW based on keywords), summarization (extracts URLs, IPs, domains, endpoints).
+- **`tools/context_manager.py`**: Context window manager for long hunt sessions. Features: session persistence, item prioritization (auto-downgrade by age), context compaction (removes low-priority old items), token budget allocation (system 5%, memory 15%, findings 30%, recon 25%, conversation 25%), export to JSON.
+
+### Added — New Commands
+- **`/exotic`**: Hunt 35 exotic vulnerability classes with 14 specialized scanners. Profiles: `--profile quick` (6 scanners, 5-10 min), `--profile deep` (all 14, 20-30 min), `--scanner <name>` (single scanner). Integrates with `/validate` for findings.
+- **`/kali`**: Integrate Kali Linux tools. Profiles: `web` (nikto, sqlmap, dirb, gobuster, wpscan), `network` (nmap, masscan), `webapp` (burp, zap, sqlmap), `password` (john, hashcat, hydra), `enumeration` (enum4linux, smbclient), `full` (comprehensive). Supports `--detect` to list tools, `--install-missing` to generate install script.
+- **`/deep-scan`**: Deep network, SSL/TLS, and DNS rebinding scanning with custom Python tools. Profiles: `fast` (top 20 ports), `full` (top 1000 ports), `--scanner ssl` (SSL only), `--scanner dns` (DNS rebinding only). Complements `/kali` with deeper analysis.
+
+### Changed — Documentation
+- **CLAUDE.md**: Updated to reflect 9 skills (added `exotic-vulns`), 16 commands (added `/exotic`, `/kali`, `/deep-scan`), 14 exotic scanners, Kali integration, context management tools.
+- **README.md**: Coming soon — v4.0.0 feature additions
+- **TODOS.md**: Marked completed items (scanner suite, Kali integration, token optimization, command additions)
+
+### Technical Improvements
+- **No external dependencies for new scanners**: All 5 new scanners (`dependency_confusion_scanner.py`, `graphql_deep_scanner.py`, `ssl_scanner.py`, `network_scanner.py`, `dns_rebinding_tester.py`) use Python stdlib only — no pip installs required.
+- **Parallel execution**: `network_scanner.py` uses ThreadPoolExecutor for concurrent port scanning (default: 10 threads, configurable).
+- **Rate limiting**: All scanners support `--rate` parameter for request throttling (default: 1 req/sec).
+- **JSON output**: All tools support `--json` flag for machine-readable output.
+- **Dry-run mode**: Host header, dependency confusion, and DNS rebinding testers support `--dry-run` to preview tests without sending requests.
+
+### Statistics
+- **Commands**: 13 → 16 (+3)
+- **Skills**: 8 → 9 (+1)
+- **Exotic vulnerability scanners**: 0 → 14 (+14, plus 5 new from scratch)
+- **Tools**: 20 → 29 (+9)
+- **Bug classes covered**: 20 web2 + 10 web3 → 55 web2 (20 standard + 35 exotic) + 10 web3 = **65 total**
+
+---
+
 ## v3.1.1 — CI/CD GitHub Actions Security Expansion (Mar 2026)
 
 ### Changed — Existing Skill Enhancement
