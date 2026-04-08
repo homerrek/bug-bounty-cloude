@@ -65,6 +65,20 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 - `tools/intel_engine.py` — on-demand intel with memory context
 - `tools/scope_checker.py` — deterministic scope safety checker
 - `tools/cicd_scanner.sh` — GitHub Actions workflow scanner (sisakulint wrapper, remote scan)
+- `tools/recon_adapter.py` — recon output normalizer (unified API for agents consuming recon data)
+- `tools/target_selector.py` — HackerOne target selector + ranker (public programs, scoring)
+- `tools/credential_store.py` — secure credential loader from .env (never persisted to hunt memory)
+- `tools/vuln_scanner.sh` — automated vuln checks against recon results
+- `tools/h1_run.sh` — HackerOne hunt master runner (orchestrates all H1 automation tools)
+
+**Web Vulnerability Scanners:**
+- `tools/xss_scanner.py` — advanced XSS scanner (50+ payloads, reflected/stored/DOM, CSP bypass)
+- `tools/sqli_scanner.py` — advanced SQLi scanner (error/blind/time-based/union injection)
+- `tools/cache_deception_scanner.py` — Web Cache Deception scanner (path confusion, cache poisoning)
+- `tools/crlf_scanner.py` — CRLF injection / HTTP response splitting scanner
+- `tools/pdf_ssrf_scanner.py` — HTML-to-PDF generator detection + SSRF/local file read testing
+- `tools/rate_limit_tester.py` — rate limit bypass scanner (IP rotation headers, padding, method swap)
+- `tools/zero_day_fuzzer.py` — business logic / zero-day fuzzer (race conditions, logic flaws, edge cases)
 
 **Exotic Vulnerability Scanners (14 tools):**
 - `tools/dependency_confusion_scanner.py` — internal package hijacking detector
@@ -82,6 +96,20 @@ This repo is a Claude Code plugin for professional bug bounty hunting across Hac
 - `tools/postmessage_scanner.py` — postMessage XSS
 - `tools/css_injection_scanner.py` — CSS injection attacks
 - `tools/esi_scanner.py` — ESI injection
+
+**HackerOne-Specific Tools:**
+- `tools/h1_idor_scanner.py` — cross-user IDOR scanner (GraphQL queries/mutations, Account A vs B)
+- `tools/h1_mutation_idor.py` — mutation IDOR battery (privileged mutations across accounts)
+- `tools/h1_oauth_tester.py` — OAuth/auth flow tester (state CSRF, redirect_uri bypass, 2FA bypass)
+- `tools/h1_race.py` — race condition tester (bounty double-spend, 2FA rate limits, negative bounty)
+
+**Intelligence & Payload Tools:**
+- `tools/cve_hunter.py` — tech fingerprinting + CVE lookup against detected stack
+- `tools/hai_payload_builder.py` — VAPT payload library + LLM/invisible prompt injection generator
+- `tools/hai_probe.py` — HackerOne AI Copilot fingerprinter
+- `tools/hai_browser_recon.js` — browser-based recon (headers, JS sources, WebSocket detection)
+- `tools/sneaky_bits.py` — invisible prompt injection encoder (U+2062/U+2064 steganography)
+- `tools/mindmap.py` — attack mindmap + prioritized hunting checklist generator (Mermaid output)
 
 **Kali Integration:**
 - `tools/kali_integration.py` — unified Kali tool orchestrator (40+ tools)
