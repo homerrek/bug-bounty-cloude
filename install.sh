@@ -9,6 +9,12 @@ mkdir -p "${INSTALL_DIR}"
 echo "Installing Claude Bug Bounty skills..."
 echo ""
 
+if [ ! -d "skills" ] || [ ! -d "commands" ]; then
+    echo "ERROR: skills/ or commands/ directory not found."
+    echo "Run this script from the claude-bug-bounty repository root."
+    exit 1
+fi
+
 # Copy all skills
 for skill_dir in skills/*/; do
     skill_name=$(basename "$skill_dir")

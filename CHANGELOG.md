@@ -29,7 +29,7 @@
 
 ### Changed — Documentation
 - **CLAUDE.md**: Updated to reflect 9 skills (added `exotic-vulns`), 16 commands (added `/exotic`, `/kali`, `/deep-scan`), 14 exotic scanners, Kali integration, context management tools.
-- **README.md**: Coming soon — v4.0.0 feature additions
+- **README.md**: Updated with v4.0.0 features, badge, statistics, and new command references
 - **TODOS.md**: Marked completed items (scanner suite, Kali integration, token optimization, command additions)
 
 ### Technical Improvements

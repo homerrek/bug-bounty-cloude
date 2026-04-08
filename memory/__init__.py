@@ -13,7 +13,7 @@ from memory.schemas import (
 )
 from memory.hunt_journal import HuntJournal
 from memory.pattern_db import PatternDB
-from memory.audit_log import AuditLog, RateLimiter, CircuitBreaker
+from memory.audit_log import AuditLog, RateLimiter, CircuitBreaker, SafeMethodPolicy, AutopilotGuard
 
 __all__ = [
     "validate_journal_entry",
@@ -25,4 +25,6 @@ __all__ = [
     "AuditLog",
     "RateLimiter",
     "CircuitBreaker",
+    "SafeMethodPolicy",
+    "AutopilotGuard",
 ]

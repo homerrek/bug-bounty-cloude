@@ -9,7 +9,7 @@ Claude Code plugin for professional bug bounty hunting across HackerOne, Bugcrow
 | `skills/bug-bounty/` | Master workflow — recon to report, all vuln classes, LLM testing, chains |
 | `skills/bb-methodology/` | Hunting mindset + 5-phase workflow + tool routing + session discipline |
 | `skills/web2-recon/` | Subdomain enum, live host discovery, URL crawling, nuclei |
-| `skills/web2-vuln-classes/` | 18 bug classes with bypass tables |
+| `skills/web2-vuln-classes/` | 20 bug classes with bypass tables |
 | `skills/exotic-vulns/` | 35 exotic vuln classes (21-55) — JWT, prototype pollution, XXE, WebSocket, HTTP/2 desync, DNS rebinding |
 | `skills/security-arsenal/` | Payloads, bypass tables, gf patterns, always-rejected list |
 | `skills/web3-audit/` | 10 smart contract bug classes, Foundry PoC template |

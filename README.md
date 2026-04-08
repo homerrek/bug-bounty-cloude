@@ -4,7 +4,7 @@
 
 <div align="center">
 
-<img src="https://img.shields.io/badge/v4.1.0-Token_Optimized-blueviolet?style=for-the-badge" alt="v4.1.0">
+<img src="https://img.shields.io/badge/v4.0.0-Exotic_Vulns_%2B_Kali-blueviolet?style=for-the-badge" alt="v4.0.0">
 
 # Claude Bug Bounty
 
@@ -83,7 +83,7 @@ Claude Bug Bounty is an **agent harness** — not just scripts. It reasons about
 **Step 1 — Install**
 
 ```bash
-git clone https://github.com/shuvonsec/claude-bug-bounty.git
+git clone https://github.com/homerrek/claude-bug-bounty.git
 cd claude-bug-bounty
 chmod +x install.sh && ./install.sh
 ```

@@ -2,7 +2,7 @@
 # =============================================================================
 # Bug Bounty Tool Installer
 # Installs all required tools via Homebrew and Go
-# Usage: ./install_tools.sh [--with-cicd-scanner]
+# Usage: ./install_tools.sh [--with-cicd-scanner] [--with-kali-tools]
 # =============================================================================
 
 set -euo pipefail
