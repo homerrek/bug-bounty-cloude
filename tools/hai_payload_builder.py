@@ -24,7 +24,6 @@ Usage — LLM injection:
 
 import argparse
 import os
-import sys
 
 # Sneaky Bits encoding (U+2062 = 0, U+2064 = 1)
 ZERO = '\u2062'

@@ -14,11 +14,9 @@ Usage:
 import argparse
 import json
 import os
-import sys
-import time
 from datetime import datetime
 from pathlib import Path
-from collections import defaultdict, deque
+from collections import defaultdict
 
 RED    = "\033[91m"
 YELLOW = "\033[93m"

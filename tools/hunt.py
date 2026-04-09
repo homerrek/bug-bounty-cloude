@@ -23,6 +23,7 @@ Usage:
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 from datetime import datetime
@@ -163,15 +164,14 @@ def run_recon(domain, quick=False):
     """Run recon engine on a domain."""
     log("info", f"Running recon on {domain}...")
     script = os.path.join(TOOLS_DIR, "recon_engine.sh")
-    quick_flag = "--quick" if quick else ""
 
     # Run with live output
     ok = False
+    cmd = ["bash", script, domain]
+    if quick:
+        cmd.append("--quick")
     try:
-        proc = subprocess.Popen(
-            f'bash "{script}" "{domain}" {quick_flag}',
-            shell=True, cwd=BASE_DIR
-        )
+        proc = subprocess.Popen(cmd, cwd=BASE_DIR)
         proc.wait(timeout=1800)  # 30 min timeout
         ok = proc.returncode == 0
     except subprocess.TimeoutExpired:
@@ -215,13 +215,12 @@ def run_vuln_scan(domain, quick=False):
 
     log("info", f"Running vulnerability scanner on {domain}...")
     script = os.path.join(TOOLS_DIR, "vuln_scanner.sh")
-    quick_flag = "--quick" if quick else ""
 
+    cmd = ["bash", script, recon_dir]
+    if quick:
+        cmd.append("--quick")
     try:
-        proc = subprocess.Popen(
-            f'bash "{script}" "{recon_dir}" {quick_flag}',
-            shell=True, cwd=BASE_DIR
-        )
+        proc = subprocess.Popen(cmd, cwd=BASE_DIR)
         proc.wait(timeout=1800)
         return proc.returncode == 0
     except subprocess.TimeoutExpired:
@@ -240,7 +239,7 @@ def _run_scanner(scanner_file: str, args_str: str, domain: str, category: str,
     out_dir = os.path.join(FINDINGS_DIR, domain, category)
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, f"{scanner_file.replace('.py', '')}_results.json")
-    cmd = f'python3 "{scanner_path}" {args_str} > "{out_file}" 2>&1'
+    cmd = f'python3 {shlex.quote(scanner_path)} {args_str} > {shlex.quote(out_file)} 2>&1'
     ok, _ = run_cmd(cmd, timeout=timeout)
     return ok
 
@@ -278,9 +277,9 @@ def run_param_discovery(domain: str) -> bool:
 def run_post_param_discovery(domain: str, cookies: str = "") -> bool:
     """Discover POST form endpoints and parameters."""
     target_url = f"https://{domain}"
-    cookie_arg = f'--cookie "{cookies}"' if cookies else ""
+    cookie_arg = f'--cookie {shlex.quote(cookies)}' if cookies else ""
     return _run_scanner("sqli_scanner.py",
-                        f'--target "{target_url}" {cookie_arg} --post --json',
+                        f'--target {shlex.quote(target_url)} {cookie_arg} --post --json',
                         domain, "params", timeout=600)
 
 
@@ -494,13 +493,13 @@ def run_cve_hunt(domain):
     log("info", f"Running CVE hunter on {domain}...")
     script = os.path.join(TOOLS_DIR, "cve_hunter.py")
     recon_dir = os.path.join(RECON_DIR, domain)
-    recon_flag = f'--recon-dir "{recon_dir}"' if os.path.isdir(recon_dir) else ""
+
+    cmd = [sys.executable, script, domain]
+    if os.path.isdir(recon_dir):
+        cmd.extend(["--recon-dir", recon_dir])
 
     try:
-        proc = subprocess.Popen(
-            f'python3 "{script}" "{domain}" {recon_flag}',
-            shell=True, cwd=BASE_DIR
-        )
+        proc = subprocess.Popen(cmd, cwd=BASE_DIR)
         proc.wait(timeout=600)
         return proc.returncode == 0
     except subprocess.TimeoutExpired:
@@ -513,17 +512,17 @@ def run_zero_day_fuzzer(domain, deep=False):
     """Run zero-day fuzzer on a target."""
     log("info", f"Running zero-day fuzzer on {domain}...")
     script = os.path.join(TOOLS_DIR, "zero_day_fuzzer.py")
-    deep_flag = "--deep" if deep else ""
 
     # Check if we have recon data with live URLs
     recon_dir = os.path.join(RECON_DIR, domain)
+    cmd = [sys.executable, script, f"https://{domain}"]
     if os.path.isdir(recon_dir):
-        cmd = f'python3 "{script}" "https://{domain}" --recon-dir "{recon_dir}" {deep_flag}'
-    else:
-        cmd = f'python3 "{script}" "https://{domain}" {deep_flag}'
+        cmd.extend(["--recon-dir", recon_dir])
+    if deep:
+        cmd.append("--deep")
 
     try:
-        proc = subprocess.Popen(cmd, shell=True, cwd=BASE_DIR)
+        proc = subprocess.Popen(cmd, cwd=BASE_DIR)
         proc.wait(timeout=900)
         return proc.returncode == 0
     except subprocess.TimeoutExpired:

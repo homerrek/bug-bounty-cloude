@@ -15,7 +15,6 @@ import argparse
 import json
 import socket
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 RED    = "\033[91m"

@@ -15,7 +15,6 @@ Usage:
 
 import argparse
 import sys
-import json
 
 # Sneaky Bits characters
 ZERO = '\u2062'  # Invisible Times

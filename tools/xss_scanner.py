@@ -22,15 +22,13 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
 import re
 import subprocess
-import sys
 import time
 from datetime import datetime
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse, quote
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FINDINGS_DIR = os.path.join(BASE_DIR, "findings")
@@ -195,8 +193,8 @@ class XSSScanner:
     def curl_request(self, url, timeout=10):
         """Make HTTP request via curl and return status, body."""
         try:
-            cmd = f'curl -s -L --max-time {timeout} "{url}"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout+5)
+            cmd = ["curl", "-s", "-L", "--max-time", str(timeout), url]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout+5)
             return result.returncode == 0, result.stdout
         except Exception:
             return False, ""

@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from datetime import datetime
@@ -50,8 +51,9 @@ def detect_technologies(domain, recon_dir=None):
 
     # Method 2: Direct httpx probe
     if not techs:
+        quoted_domain = shlex.quote(domain)
         success, output = run_cmd(
-            f'echo "{domain}" | httpx -silent -tech-detect -status-code 2>/dev/null',
+            f'echo {quoted_domain} | httpx -silent -tech-detect -status-code 2>/dev/null',
             timeout=30
         )
         if success and output:
@@ -64,7 +66,7 @@ def detect_technologies(domain, recon_dir=None):
 
     # Method 3: Manual header analysis
     success, output = run_cmd(
-        f'curl -sI "https://{domain}" --max-time 10 2>/dev/null',
+        f'curl -sI {shlex.quote("https://" + domain)} --max-time 10 2>/dev/null',
         timeout=15
     )
     if success and output:
@@ -117,7 +119,7 @@ def detect_technologies(domain, recon_dir=None):
 
     for path, tech in fingerprints.items():
         success, output = run_cmd(
-            f'curl -s -o /dev/null -w "%{{http_code}}" "https://{domain}{path}" --max-time 5',
+            f'curl -s -o /dev/null -w "%{{http_code}}" {shlex.quote("https://" + domain + path)} --max-time 5',
             timeout=10
         )
         if success and output in ("200", "301", "302", "403"):
@@ -221,9 +223,9 @@ def run_nuclei_cve_scan(domain, recon_dir=None):
             targets_file = live_file
 
     if targets_file:
-        cmd = f'cat "{targets_file}" | nuclei -tags cve -severity medium,high,critical -silent -rate-limit 30 2>/dev/null'
+        cmd = f'cat {shlex.quote(targets_file)} | nuclei -tags cve -severity medium,high,critical -silent -rate-limit 30 2>/dev/null'
     else:
-        cmd = f'echo "https://{domain}" | nuclei -tags cve -severity medium,high,critical -silent -rate-limit 30 2>/dev/null'
+        cmd = f'echo {shlex.quote("https://" + domain)} | nuclei -tags cve -severity medium,high,critical -silent -rate-limit 30 2>/dev/null'
 
     success, output = run_cmd(cmd, timeout=300)
 
@@ -261,17 +263,20 @@ def check_exposed_configs(domain, recon_dir=None):
     for host in hosts:
         for path in config_paths:
             url = f"{host}{path}"
-            success, output = run_cmd(
-                f'curl -s -o /tmp/cfg_check.txt -w "%{{http_code}}" --max-time 5 "{url}"',
+            # Fetch response body and status code directly (no temp file needed)
+            success, body = run_cmd(
+                f'curl -s -w "\\n%{{http_code}}" --max-time 5 {shlex.quote(url)}',
                 timeout=10
             )
-            if success and output.strip() == "200":
-                # Verify it's not an HTML error page
-                _, content = run_cmd('file /tmp/cfg_check.txt', timeout=5)
-                _, head = run_cmd('head -1 /tmp/cfg_check.txt', timeout=5)
-                if 'HTML' not in content and '<!DOCTYPE' not in head and '<html' not in head.lower():
-                    exposed.append(url)
-                    print(f"    [VULN] Config exposed: {url}")
+            if success and body:
+                parts = body.rsplit('\n', 1)
+                content_body = parts[0] if len(parts) == 2 else body
+                status = parts[1].strip() if len(parts) == 2 else ""
+                if status == "200":
+                    # Verify it's not an HTML error page
+                    if '<!DOCTYPE' not in content_body and '<html' not in content_body.lower():
+                        exposed.append(url)
+                        print(f"    [VULN] Config exposed: {url}")
 
     if not exposed:
         print("    [+] No exposed config files found")
