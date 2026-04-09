@@ -16,6 +16,7 @@ import re
 import shlex
 import subprocess
 import sys
+import urllib.parse as _urlparse
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -173,7 +174,6 @@ def search_cves(tech_name, max_results=10):
     # Method 1: NVD API (NIST)
     print(f"    [>] Searching CVEs for: {tech_name}...")
     try:
-        import urllib.parse as _urlparse
         nvd_url = (
             f"https://services.nvd.nist.gov/rest/json/cves/2.0"
             f"?keywordSearch={_urlparse.quote(search_term)}&resultsPerPage={int(max_results)}"
@@ -220,7 +220,6 @@ def search_cves(tech_name, max_results=10):
     # Method 2: cve.circl.lu API (fallback)
     if not cves:
         try:
-            import urllib.parse as _urlparse
             circl_url = f"https://cve.circl.lu/api/search/{_urlparse.quote(search_term)}"
             success, output = run_cmd(
                 ["curl", "-s", circl_url, "--max-time", "15"],

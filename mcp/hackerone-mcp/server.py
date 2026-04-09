@@ -88,6 +88,7 @@ def _graphql_request(query: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
             raise HackerOneAPIError(f"Network error: {e.reason}")
         except json.JSONDecodeError as e:
             raise HackerOneAPIError(f"Invalid JSON response: {e}")
+    # All retry attempts exhausted (every attempt received HTTP 429).
     raise HackerOneAPIError("Max retries exceeded (rate limited)", status_code=429)
 
 
