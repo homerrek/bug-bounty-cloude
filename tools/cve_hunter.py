@@ -161,6 +161,12 @@ def search_cves(tech_name, max_results=10):
     """Search for CVEs related to a technology using public APIs."""
     cves = []
 
+    # Validate and clamp max_results to a safe range.
+    try:
+        max_results = max(1, min(50, int(max_results)))
+    except (ValueError, TypeError):
+        max_results = 10
+
     # Clean up tech name for search
     search_term = re.sub(r'[/.]', ' ', tech_name).strip()
 

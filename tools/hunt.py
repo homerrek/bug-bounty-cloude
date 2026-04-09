@@ -354,7 +354,10 @@ def run_sqlmap_request_file(request_file: str, domain: str = "",
     out_dir = os.path.join(FINDINGS_DIR, domain or "unknown", "sqlmap")
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, "sqlmap_results.txt")
-    cmd = (f'sqlmap -r {shlex.quote(request_file)} --level={int(level)} --risk={int(risk)} '
+    # Clamp level/risk to their valid sqlmap ranges (1-5 and 1-3 respectively).
+    safe_level = max(1, min(5, int(level)))
+    safe_risk = max(1, min(3, int(risk)))
+    cmd = (f'sqlmap -r {shlex.quote(request_file)} --level={safe_level} --risk={safe_risk} '
            f'--batch --output-dir={shlex.quote(out_dir)} 2>&1 | tee {shlex.quote(out_file)}')
     ok, _ = run_shell_cmd(cmd, timeout=1200)  # nosec B602 – shell pipe (tee) required
     return ok

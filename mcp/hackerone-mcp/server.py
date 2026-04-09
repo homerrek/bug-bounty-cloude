@@ -73,7 +73,10 @@ def _graphql_request(query: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
                 return data
         except urllib.error.HTTPError as e:
             if e.code == 429:
-                retry_after = int(e.headers.get("Retry-After", 10) or 10)
+                try:
+                    retry_after = int(e.headers.get("Retry-After", 10) or 10)
+                except (ValueError, TypeError):
+                    retry_after = 10
                 wait = min(retry_after, 60) * (attempt + 1)
                 _time.sleep(wait)
                 continue

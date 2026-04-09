@@ -115,7 +115,10 @@ def fetch_url(url: str, headers: dict = None, data: bytes = None, timeout: int =
                 return json.loads(body)
         except urllib.error.HTTPError as e:
             if e.code == 429:
-                retry_after = int(e.headers.get("Retry-After", 5) or 5)
+                try:
+                    retry_after = int(e.headers.get("Retry-After", 5) or 5)
+                except (ValueError, TypeError):
+                    retry_after = 5
                 wait = min(retry_after, 30) * (attempt + 1)
                 print(f"  {YELLOW}Rate limited ({url}). Waiting {wait}s…{RESET}")
                 _time.sleep(wait)
