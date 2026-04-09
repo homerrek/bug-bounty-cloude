@@ -29,11 +29,12 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
-TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE_DIR = os.path.dirname(TOOLS_DIR)
-TARGETS_DIR = os.path.join(BASE_DIR, "targets")
-WORDLIST_DIR = os.path.join(BASE_DIR, "wordlists")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TOOLS_DIR = BASE_DIR
+TARGETS_DIR = os.path.join(BASE_DIR, "..", "targets")
+WORDLIST_DIR = os.path.join(BASE_DIR, "..", "wordlists")
 
 # Output root — configurable via BBH_OUTPUT_DIR, defaults to ~/bug-bounty-outputs
 OUTPUT_ROOT = os.environ.get("BBH_OUTPUT_DIR", str(Path.home() / "bug-bounty-outputs"))
@@ -415,6 +416,217 @@ def run_deserial_scan(domain: str) -> bool:
     return _run_scanner("deserial_scanner.py", f'--url "{target_url}" --json', domain, "deserial")
 
 
+def run_intel(domain: str, recon_dir: str) -> bool:
+    """Run intel engine to fetch CVE and disclosure intel (between recon and rank steps)."""
+    log("info", f"Running intel engine for {domain}...")
+    script = os.path.join(TOOLS_DIR, "intel_engine.py")
+    if not os.path.exists(script):
+        log("warn", "intel_engine.py not found — skipping intel step")
+        return False
+
+    intel_dir = os.path.join(recon_dir, "intel")
+    os.makedirs(intel_dir, exist_ok=True)
+    out_file = os.path.join(intel_dir, "intel.json")
+
+    cmd = (f'{shlex.quote(sys.executable)} {shlex.quote(script)}'
+           f' --target {shlex.quote(domain)} --json'
+           f' > {shlex.quote(out_file)} 2>&1')
+    ok, _ = run_shell_cmd(cmd, timeout=120)  # nosec B602 – shell redirect
+    if not ok:
+        log("warn", f"intel_engine.py had issues for {domain} — continuing")
+    return ok
+
+
+def run_h1_scanners(domain: str) -> None:
+    """Run HackerOne-specific scanners in the hunt step (after vuln_scanner.sh)."""
+    idor_dir = os.path.join(FINDINGS_DIR, domain, "idor")
+    auth_dir = os.path.join(FINDINGS_DIR, domain, "auth_bypass")
+    os.makedirs(idor_dir, exist_ok=True)
+    os.makedirs(auth_dir, exist_ok=True)
+
+    token_a = os.environ.get("H1_TOKEN_A", "")
+    token_b = os.environ.get("H1_TOKEN_B", "")
+
+    # h1_idor_scanner.py → findings/{domain}/idor/
+    scanner_path = os.path.join(TOOLS_DIR, "h1_idor_scanner.py")
+    if not os.path.exists(scanner_path):
+        log("warn", "h1_idor_scanner.py not found — skipping")
+    elif not token_a or not token_b:
+        log("warn", "H1_TOKEN_A/H1_TOKEN_B not set — skipping h1_idor_scanner.py")
+    else:
+        out_file = os.path.join(idor_dir, "h1_idor_scanner_results.json")
+        cmd = (f'{shlex.quote(sys.executable)} {shlex.quote(scanner_path)}'
+               f' --token-a {shlex.quote(token_a)} --token-b {shlex.quote(token_b)}'
+               f' > {shlex.quote(out_file)} 2>&1')
+        ok, _ = run_shell_cmd(cmd, timeout=300)  # nosec B602 – shell redirect
+        if not ok:
+            log("warn", "h1_idor_scanner.py finished with non-zero exit — continuing")
+
+    # h1_mutation_idor.py → findings/{domain}/idor/
+    scanner_path = os.path.join(TOOLS_DIR, "h1_mutation_idor.py")
+    cookie_a = os.environ.get("H1_COOKIE_A", "")
+    cookie_b = os.environ.get("H1_COOKIE_B", "")
+    report_id = os.environ.get("H1_REPORT_ID", "")
+    report_gid = os.environ.get("H1_REPORT_GID", "")
+    if not os.path.exists(scanner_path):
+        log("warn", "h1_mutation_idor.py not found — skipping")
+    elif not (cookie_a and cookie_b and report_id and report_gid):
+        log("warn", "H1_COOKIE_A/B, H1_REPORT_ID, H1_REPORT_GID not set — skipping h1_mutation_idor.py")
+    else:
+        out_file = os.path.join(idor_dir, "h1_mutation_idor_results.json")
+        cmd = (f'{shlex.quote(sys.executable)} {shlex.quote(scanner_path)}'
+               f' --cookie-a {shlex.quote(cookie_a)}'
+               f' --cookie-b {shlex.quote(cookie_b)}'
+               f' --report-id {shlex.quote(report_id)}'
+               f' --report-gid {shlex.quote(report_gid)}'
+               f' > {shlex.quote(out_file)} 2>&1')
+        ok, _ = run_shell_cmd(cmd, timeout=300)  # nosec B602 – shell redirect
+        if not ok:
+            log("warn", "h1_mutation_idor.py finished with non-zero exit — continuing")
+
+    # h1_oauth_tester.py → findings/{domain}/auth_bypass/
+    scanner_path = os.path.join(TOOLS_DIR, "h1_oauth_tester.py")
+    if not os.path.exists(scanner_path):
+        log("warn", "h1_oauth_tester.py not found — skipping")
+    else:
+        out_file = os.path.join(auth_dir, "h1_oauth_tester_results.json")
+        cmd = (f'{shlex.quote(sys.executable)} {shlex.quote(scanner_path)}'
+               f' --check-cors > {shlex.quote(out_file)} 2>&1')
+        ok, _ = run_shell_cmd(cmd, timeout=300)  # nosec B602 – shell redirect
+        if not ok:
+            log("warn", "h1_oauth_tester.py finished with non-zero exit — continuing")
+
+    # h1_race.py → findings/{domain}/auth_bypass/
+    scanner_path = os.path.join(TOOLS_DIR, "h1_race.py")
+    if not os.path.exists(scanner_path):
+        log("warn", "h1_race.py not found — skipping")
+    elif not token_a:
+        log("warn", "H1_TOKEN_A not set — skipping h1_race.py")
+    else:
+        out_file = os.path.join(auth_dir, "h1_race_results.json")
+        cmd = (f'{shlex.quote(sys.executable)} {shlex.quote(scanner_path)}'
+               f' --token-a {shlex.quote(token_a)} --test 2fa'
+               f' > {shlex.quote(out_file)} 2>&1')
+        ok, _ = run_shell_cmd(cmd, timeout=300)  # nosec B602 – shell redirect
+        if not ok:
+            log("warn", "h1_race.py finished with non-zero exit — continuing")
+
+
+def run_ai_llm_scan(domain: str) -> bool:
+    """Run AI/LLM endpoint probing using hai_payload_builder and hai_probe (end of hunt step)."""
+    log("info", f"Running AI/LLM endpoint probing for {domain}...")
+    ai_dir = os.path.join(FINDINGS_DIR, domain, "ai_llm")
+    os.makedirs(ai_dir, exist_ok=True)
+
+    payload_builder = os.path.join(TOOLS_DIR, "hai_payload_builder.py")
+    hai_probe = os.path.join(TOOLS_DIR, "hai_probe.py")
+
+    if not os.path.exists(payload_builder):
+        log("warn", "hai_payload_builder.py not found — skipping AI/LLM scan")
+        return False
+
+    # Step 1: Generate payloads into ai_llm dir
+    payloads_dir = os.path.join(ai_dir, "payloads")
+    os.makedirs(payloads_dir, exist_ok=True)
+    cmd = (f'{shlex.quote(sys.executable)} {shlex.quote(payload_builder)}'
+           f' --type all --output-dir {shlex.quote(payloads_dir)}'
+           f' > {shlex.quote(os.path.join(ai_dir, "payload_build.log"))} 2>&1')
+    ok, _ = run_shell_cmd(cmd, timeout=120)  # nosec B602 – shell redirect
+    if not ok:
+        log("warn", "hai_payload_builder.py finished with non-zero exit — continuing")
+
+    # Step 2: Probe AI endpoints using hai_probe.py (requires H1 API credentials)
+    if not os.path.exists(hai_probe):
+        log("warn", "hai_probe.py not found — skipping Hai API probe")
+        return ok
+
+    api_name = os.environ.get("H1_API_NAME", "")
+    api_token = os.environ.get("H1_API_TOKEN", "")
+    if not api_name or not api_token:
+        log("warn", "H1_API_NAME/H1_API_TOKEN not set — skipping hai_probe.py")
+        return ok
+
+    out_file = os.path.join(ai_dir, "hai_probe_results.json")
+    cmd = (f'{shlex.quote(sys.executable)} {shlex.quote(hai_probe)}'
+           f' --api-name {shlex.quote(api_name)} --token {shlex.quote(api_token)}'
+           f' --fingerprint > {shlex.quote(out_file)} 2>&1')
+    probe_ok, _ = run_shell_cmd(cmd, timeout=120)  # nosec B602 – shell redirect
+    if not probe_ok:
+        log("warn", "hai_probe.py finished with non-zero exit — continuing")
+    return ok or probe_ok
+
+
+_GITHUB_HOSTS = {"github.com", "www.github.com"}
+_MAX_CICD_REPOS = 5  # maximum GitHub repos to scan per target
+
+
+def _is_github_url(raw: str) -> bool:
+    """Return True only when the URL host is exactly github.com (or www.github.com)."""
+    raw = raw.strip()
+    if not raw:
+        return False
+    # Prepend scheme so urlparse can extract the netloc correctly.
+    if not raw.startswith(("http://", "https://")):
+        raw = "https://" + raw
+    try:
+        host = urlparse(raw).netloc.lower()
+        # Strip port if present.
+        host = host.split(":")[0]
+        return host in _GITHUB_HOSTS
+    except Exception:
+        return False
+
+
+def run_cicd_scan(domain: str) -> bool:
+    """Run CI/CD scanner when GitHub repository URLs are found in recon output (hunt step)."""
+    urls_file = os.path.join(RECON_DIR, domain, "urls", "all.txt")
+    if not os.path.isfile(urls_file):
+        return False
+
+    try:
+        with open(urls_file) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return False
+
+    github_urls = [line.strip() for line in lines if _is_github_url(line)]
+    if not github_urls:
+        return False
+
+    log("info", f"GitHub URLs found — running CI/CD scanner for {domain}...")
+    script = os.path.join(TOOLS_DIR, "cicd_scanner.sh")
+    if not os.path.exists(script):
+        log("warn", "cicd_scanner.sh not found — skipping")
+        return False
+
+    cicd_dir = os.path.join(FINDINGS_DIR, domain, "cicd")
+    os.makedirs(cicd_dir, exist_ok=True)
+
+    ran = 0
+    for raw_url in github_urls[:_MAX_CICD_REPOS]:
+        # Normalize to owner/repo (strip protocol and trailing slashes/paths)
+        normalized = raw_url
+        for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix):]
+                break
+        normalized = normalized.rstrip("/").split("?")[0].split("#")[0]
+        if "/" not in normalized:
+            continue  # not an owner/repo reference
+        slug = normalized.replace("/", "_")
+        out_file = os.path.join(cicd_dir, f"cicd_{slug}.txt")
+        cmd = (f'bash {shlex.quote(script)} {shlex.quote(normalized)}'
+               f' --output-dir {shlex.quote(cicd_dir)}'
+               f' > {shlex.quote(out_file)} 2>&1')
+        ok, _ = run_shell_cmd(cmd, timeout=300)  # nosec B602 – shell redirect
+        if ok:
+            ran += 1
+        else:
+            log("warn", f"cicd_scanner.sh had issues for {raw_url} — continuing")
+
+    return ran > 0
+
+
 def generate_reports(domain):
     """Generate reports for findings."""
     findings_dir = os.path.join(FINDINGS_DIR, domain)
@@ -669,11 +881,25 @@ def hunt_target(domain, quick=False, recon_only=False, scan_only=False,
         if not result["recon"]:
             log("warn", f"Recon had issues for {domain}, continuing anyway...")
 
+        # Intel engine: run between recon and rank steps so the ranker can factor
+        # in known CVEs when prioritising hosts (1C)
+        recon_dir = _resolve_recon_dir(domain)
+        run_intel(domain, recon_dir)
+
     if recon_only:
         return result
 
     check_cicd_results(domain)
     result["scan"] = run_vuln_scan(domain, quick=quick)
+
+    # H1-specific scanners: IDOR, mutation IDOR, OAuth, race conditions (1A)
+    run_h1_scanners(domain)
+
+    # CI/CD scanner: only when GitHub URLs discovered in recon (1D)
+    run_cicd_scan(domain)
+
+    # AI/LLM endpoint probing: payload generation + Hai API probe (1B)
+    run_ai_llm_scan(domain)
 
     # Exotic scanning (core 3 by default, configurable profile)
     if exotic_profile and exotic_profile != "off":

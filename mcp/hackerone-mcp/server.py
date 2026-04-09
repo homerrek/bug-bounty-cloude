@@ -20,6 +20,7 @@ MCP integration:
 """
 
 import json
+import os
 import ssl
 import sys
 import urllib.request
@@ -277,6 +278,17 @@ def get_program_policy(program: str) -> dict:
 # ─── CLI interface ───────────────────────────────────────────────────────────
 
 def main():
+    # Check for HACKERONE_API_TOKEN before registering any tools.
+    # The public GraphQL endpoints used here do not strictly require auth,
+    # but the token signals that the operator has opted-in to HackerOne
+    # integration.  Without it we skip tool registration and start cleanly.
+    if not os.environ.get("HACKERONE_API_TOKEN", "").strip():
+        print(
+            "WARNING: HACKERONE_API_TOKEN not set"
+            " — HackerOne MCP tools disabled"
+        )
+        sys.exit(0)
+
     if len(sys.argv) < 2:
         print("Usage:")
         print("  python3 server.py search <keyword> [--program <handle>] [--limit N]")

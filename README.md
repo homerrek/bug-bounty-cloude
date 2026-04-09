@@ -84,8 +84,8 @@ Claude Bug Bounty is an **agent harness** — not just scripts. It reasons about
 **Step 1 — Install**
 
 ```bash
-git clone https://github.com/homerrek/claude-bug-bounty.git
-cd claude-bug-bounty
+git clone https://github.com/homerrek/bug-bounty-cloude.git
+cd bug-bounty-cloude
 chmod +x install.sh && ./install.sh
 ```
 
@@ -643,7 +643,7 @@ Wraps `learn.py` + HackerOne MCP + hunt memory:
 <br>
 
 ```
-claude-bug-bounty/
+bug-bounty-cloude/
 ├── skills/                     9 skill domains (canonical SKILL.md files)
 ├── SKILL.md                    thin pointer → skills/bug-bounty/SKILL.md
 ├── commands/                   16 slash commands
