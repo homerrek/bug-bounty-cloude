@@ -416,6 +416,20 @@ def run_deserial_scan(domain: str) -> bool:
     return _run_scanner("deserial_scanner.py", f'--url "{target_url}" --json', domain, "deserial")
 
 
+def run_cache_deception_scan(domain: str) -> bool:
+    """Test for web cache deception vulnerabilities."""
+    target_url = f"https://{domain}"
+    return _run_scanner("cache_deception_scanner.py",
+                        f'--url "{target_url}" --json --rate 1.0',
+                        domain, "cache_deception")
+
+
+def run_pdf_ssrf_scan(domain: str) -> bool:
+    """Detect HTML-to-PDF generators and test for SSRF / local file read."""
+    target_url = f"https://{domain}"
+    return _run_scanner("pdf_ssrf_scanner.py", f'--url "{target_url}"', domain, "pdf_ssrf")
+
+
 def run_intel(domain: str, recon_dir: str) -> bool:
     """Run intel engine to fetch CVE and disclosure intel (between recon and rank steps)."""
     log("info", f"Running intel engine for {domain}...")
@@ -820,6 +834,8 @@ def run_exotic_scan(domain, profile="core", quick=False):
         ("network_scanner.py",          f'--host "{domain}" --json'),
         ("crlf_scanner.py",             f'--url "{target_url}" --json'),
         ("rate_limit_tester.py",        f'--url "{target_url}" --json'),
+        ("cache_deception_scanner.py",  f'--url "{target_url}" --json --rate 1.0'),
+        ("pdf_ssrf_scanner.py",         f'--url "{target_url}"'),
     ]
 
     # Select scanners based on profile
@@ -871,8 +887,22 @@ def hunt_target(domain, quick=False, recon_only=False, scan_only=False,
         exotic_profile: Exotic scanner suite to run after standard vuln scan.
             'core'  — cors, ssti, open_redirect (default, ~3-5 min).
             'quick' — core + jwt, host_header, dependency_confusion (~5-10 min).
-            'deep'  — all 17 exotic scanners (~20-30 min).
+            'deep'  — all exotic scanners including cache deception and PDF SSRF (~20-30 min).
             'off'   — skip exotic phase entirely.
+
+    Pipeline phases:
+        1. Recon          — subdomain enum, live host discovery, JS analysis, secrets.
+        2. Intel          — CVE and disclosure intel enrichment.
+        3. CI/CD check    — surface CI/CD scan results from recon.
+        4. Vuln scan      — nuclei + vuln_scanner.sh full pass.
+        5. H1 scanners    — IDOR, mutation IDOR, OAuth, race conditions.
+        6. CI/CD scan     — deep CI/CD pipeline analysis.
+        7. AI/LLM probe   — payload generation + Hai API endpoint probing.
+        8. Exotic scan    — configurable exotic vuln scanner suite.
+        9. Web vuln scan  — SQLi (sqlmap) and JWT audit.
+       10. CVE hunt       — optional CVE hunter.
+       11. Zero-day fuzz  — optional zero-day fuzzer.
+       12. Report gen     — markdown + JSON findings reports.
     """
     result = {"domain": domain, "success": True, "recon": False, "scan": False, "reports": 0}
 
@@ -904,6 +934,10 @@ def hunt_target(domain, quick=False, recon_only=False, scan_only=False,
     # Exotic scanning (core 3 by default, configurable profile)
     if exotic_profile and exotic_profile != "off":
         run_exotic_scan(domain, profile=exotic_profile, quick=quick)
+
+    # Phase 9 — standard web vuln scanners (always run, independent of exotic profile)
+    run_sqlmap_targeted(domain)
+    run_jwt_audit(domain)
 
     # CVE hunting (only when explicitly requested)
     if cve_hunt:
