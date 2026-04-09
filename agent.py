@@ -1127,9 +1127,9 @@ class ReActAgent:
 
     def _can_finish(self) -> bool:
         """Return True only when the agent has done enough real work to wrap up."""
-        completed_scans = sum(
-            1 for step in self.memory.completed_steps if step in SCAN_TOOLS
-        )
+        # Count completed scan tools from the deduplicated completed_steps list —
+        # completed_steps is a list so we use a set comprehension to avoid repeated work.
+        completed_scans = len(set(self.memory.completed_steps) & SCAN_TOOLS)
         return (self.memory.step_count >= self.MIN_STEPS_BEFORE_FINISH
                 and completed_scans >= self.MIN_SCAN_TOOLS_BEFORE_FINISH)
 

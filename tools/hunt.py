@@ -298,13 +298,12 @@ def run_cors_check(domain: str) -> bool:
 
 def run_cms_exploit(domain: str) -> bool:
     """Run CMS-specific exploit checks (Drupal, WordPress, Joomla, Magento)."""
-    target_url = f"https://{domain}"
     recon_dir_path = os.path.join(RECON_DIR, domain)
-    tech_file = os.path.join(recon_dir_path, "tech_priority.txt")
-    cmd = f'python3 "{os.path.join(TOOLS_DIR, "vuln_scanner.sh")}" --cms-only "{recon_dir_path}" 2>&1 || true'
     out_dir = os.path.join(FINDINGS_DIR, domain, "cms")
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, "cms_results.txt")
+    script = os.path.join(TOOLS_DIR, "vuln_scanner.sh")
+    cmd = f'bash "{script}" --cms-only "{recon_dir_path}" 2>&1 || true'
     ok, output = run_cmd(cmd, timeout=300)
     Path(out_file).write_text(output)
     return ok

@@ -278,6 +278,14 @@ MAX_CTX          = CTX_ANALYZE
 MAX_RESP         = 6000    # max tokens to generate for analysis
 MAX_RESP_REPORT  = 10000   # full context for report writing
 
+# Jaccard similarity threshold for near-duplicate finding deduplication
+JACCARD_DEDUP_THRESHOLD = 0.80
+
+# RCE noise filtering: pure [STATUS] URL lines that contain any of these
+# signals are kept (real exploit targets); those without any signal are dropped.
+_RCE_EXPLOIT_SIGNALS = frozenset(("jmx", "console", "manager", "jboss", "struts", "log4j", "put", "upload", "rce"))
+_RCE_PURE_STATUS_URL_RE = re.compile(r"^\[(\d{3})\]\s+https?://\S+$")
+
 GREEN   = "\033[0;32m"
 CYAN    = "\033[0;36m"
 YELLOW  = "\033[1;33m"
@@ -640,9 +648,7 @@ Keep it under 80 words total."""
                 return True
             # Drop pure [STATUS] URL lines that carry no vuln signal
             # Keep lines that contain exploit-relevant keywords (jmx-console, manager, jboss, etc.)
-            _exploit_signals = ("jmx", "console", "manager", "jboss", "struts", "log4j", "put", "upload", "rce")
-            pure_status_url = re.match(r"^\[(\d{3})\]\s+https?://\S+$", clean.strip())
-            if pure_status_url and not any(sig in lower for sig in _exploit_signals):
+            if _RCE_PURE_STATUS_URL_RE.match(clean.strip()) and not any(sig in lower for sig in _RCE_EXPLOIT_SIGNALS):
                 return True
             if lower.startswith((
                 "target domain:", "java targets:", "tomcat targets:", "jboss targets:",
@@ -746,7 +752,7 @@ Keep it under 80 words total."""
         for _, category, line in candidates:
             ng = _ngrams(line)
             if ng and any(
-                len(ng & prev) / len(ng | prev) >= 0.8
+                len(ng & prev) / len(ng | prev) >= JACCARD_DEDUP_THRESHOLD
                 for prev in seen_ngrams if prev
             ):
                 continue
