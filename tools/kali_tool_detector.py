@@ -15,8 +15,6 @@ import argparse
 import json
 import os
 import subprocess
-import sys
-from pathlib import Path
 
 RED    = "\033[91m"
 YELLOW = "\033[93m"

@@ -13,7 +13,6 @@ import argparse
 import json
 import os
 import ssl
-import sys
 import urllib.request
 import urllib.parse
 import urllib.error

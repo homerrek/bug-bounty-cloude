@@ -15,7 +15,6 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
 
 # Import learn.py functions (same repo)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

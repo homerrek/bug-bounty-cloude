@@ -14,7 +14,6 @@ Usage:
 
 import argparse
 import json
-import sys
 import time
 import urllib.request
 import urllib.error

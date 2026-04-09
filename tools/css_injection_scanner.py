@@ -15,12 +15,11 @@ Usage:
 
 import argparse
 import json
-import sys
+import re
 import time
 import urllib.request
 import urllib.error
 import urllib.parse
-import re
 
 # ─── Color codes ──────────────────────────────────────────────────────────────
 RED    = "\033[91m"

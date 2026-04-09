@@ -26,7 +26,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 import time
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
@@ -241,8 +240,8 @@ class SQLiScanner:
         """Make HTTP request via curl and return status, body, time."""
         try:
             start = time.time()
-            cmd = f'curl -s -L --max-time {timeout} -w "\\n%{{http_code}}" "{url}"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout+5)
+            cmd = ["curl", "-s", "-L", "--max-time", str(timeout), "-w", "\n%{http_code}", url]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout+5)
             elapsed = time.time() - start
 
             output = result.stdout

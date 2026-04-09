@@ -14,7 +14,6 @@ import argparse
 import json
 import socket
 import ssl
-import sys
 from datetime import datetime
 from urllib.parse import urlparse
 

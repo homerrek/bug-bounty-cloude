@@ -13,8 +13,6 @@ import argparse
 import base64
 import json
 import time
-import sys
-from typing import Optional
 import urllib.request
 import urllib.error
 
