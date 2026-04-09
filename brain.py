@@ -268,10 +268,15 @@ TRIAGE_MODEL_PRIORITY = [
     "qwen3-coder-64k:latest",    # last resort — big model for triage if nothing else
 ]
 
-# Token limits — qwen3-coder-64k supports 64K context
-MAX_CTX   = 32768   # context window to send (32K — safe for most phases)
-MAX_RESP  = 6000    # max tokens to generate for analysis
-MAX_RESP_REPORT = 10000  # full context for report writing
+# Token limits — three-tier context budget
+CTX_TRIAGE  = 4096    # phase_complete(), triage_finding(), next_action()
+CTX_ANALYZE = 12288   # analyze_recon(), interpret_scan()
+CTX_REPORT  = 24576   # generate_report() only
+
+# Keep backward-compat alias
+MAX_CTX          = CTX_ANALYZE
+MAX_RESP         = 6000    # max tokens to generate for analysis
+MAX_RESP_REPORT  = 10000   # full context for report writing
 
 GREEN   = "\033[0;32m"
 CYAN    = "\033[0;36m"
@@ -323,6 +328,10 @@ When asked to analyze data:
 - Be decisive about cutting dead ends — wasted time means missed critical findings
 - Think about what a tired developer at 2am might have broken
 - Output the analysis and nothing else — no preamble, no disclaimers, no closing remarks"""
+
+# Short system prompt for triage calls — saves ~19K tokens/hunt
+BRAIN_SYSTEM_SHORT = ("You are an elite penetration tester. Analyze the security finding and respond concisely "
+                      "with technical accuracy. No disclaimers.")
 
 
 def _get_available_models() -> list[str]:
@@ -475,18 +484,21 @@ Respond in 2 short bullets only:
 
 Keep it under 80 words total."""
 
-        return self._stream(prompt, f"Phase Complete → {phase}", max_tokens=140)
+        return self._stream(prompt, f"Phase Complete → {phase}", max_tokens=140,
+                            ctx_size=CTX_TRIAGE, system_prompt=BRAIN_SYSTEM_SHORT)
 
     # ── Internal streaming helper ──────────────────────────────────────────────
     def _stream_fast(self, user_prompt: str, label: str, max_tokens: int = 1500) -> str:
-        """Stream using the fast triage model (BaronLLM if installed)."""
+        """Stream using the fast triage model (BaronLLM if installed) with triage context budget."""
         orig = self.model
         self.model = self.triage_model
-        result = self._stream(user_prompt, label, max_tokens)
+        result = self._stream(user_prompt, label, max_tokens,
+                              ctx_size=CTX_TRIAGE, system_prompt=BRAIN_SYSTEM_SHORT)
         self.model = orig
         return result
 
-    def _stream(self, user_prompt: str, label: str, max_tokens: int = MAX_RESP) -> str:
+    def _stream(self, user_prompt: str, label: str, max_tokens: int = MAX_RESP,
+                ctx_size: int = CTX_ANALYZE, system_prompt: str = BRAIN_SYSTEM) -> str:
         """Call the active LLM provider, print response live (Ollama streams; cloud APIs print after)."""
         if not self.enabled:
             return ""
@@ -501,7 +513,7 @@ Keep it under 80 words total."""
                 stream = self.client.chat(
                     model=self.model,
                     messages=[
-                        {"role": "system", "content": BRAIN_SYSTEM},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user",   "content": user_prompt},
                     ],
                     stream=True,
@@ -509,7 +521,7 @@ Keep it under 80 words total."""
                         "num_predict": max_tokens,
                         "temperature": 0.3,
                         "top_p": 0.9,
-                        "num_ctx": MAX_CTX,
+                        "num_ctx": ctx_size,
                     },
                 )
                 for chunk in stream:
@@ -519,7 +531,7 @@ Keep it under 80 words total."""
             else:
                 # Non-streaming path for cloud providers
                 full_text = self._llm.chat(
-                    self.model, BRAIN_SYSTEM, user_prompt,
+                    self.model, system_prompt, user_prompt,
                     max_tokens=max_tokens, temperature=0.3,
                 )
                 print(full_text, flush=True)
@@ -542,12 +554,28 @@ Keep it under 80 words total."""
             return ""
 
     def _save_analysis(self, output_dir: str, filename: str, content: str) -> str:
-        """Save brain analysis to disk."""
-        path = Path(output_dir) / "brain" / filename
+        """Save brain analysis to disk under output_dir/brain/ (or output_dir if already brain/)."""
+        out_path = Path(output_dir)
+        # Avoid double brain/ nesting when caller already passes a brain_dir
+        if out_path.name == "brain":
+            path = out_path / filename
+        else:
+            path = out_path / "brain" / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"Generated: {datetime.now()}  Model: {self.model}\n\n{content}")
         print(f"{GREEN}[+] Saved: {path}{NC}")
         return str(path)
+
+    @staticmethod
+    def _is_cached(output_dir: str, filename: str, max_age_hours: float = 24.0) -> bool:
+        """Return True if *filename* inside *output_dir*/brain/ exists and is younger than max_age_hours."""
+        import time as _time
+        out_path = Path(output_dir)
+        candidate = out_path / "brain" / filename if out_path.name != "brain" else out_path / filename
+        if not candidate.exists():
+            return False
+        age_hours = (_time.time() - candidate.stat().st_mtime) / 3600.0
+        return age_hours < max_age_hours
 
     @staticmethod
     def _target_from_artifact_dir(path: str) -> str:
@@ -607,22 +635,14 @@ Keep it under 80 words total."""
                 "unauthorized request blocked",
                 "log4shell (cve-2021-44228)",
                 "# oob:",
-                "[401] http://",
-                "[401] https://",
-                "[200] http://",
-                "[200] https://",
-                "[301] http://",
-                "[301] https://",
-                "[302] http://",
-                "[302] https://",
-                "[403] http://",
-                "[403] https://",
-                "[404] http://",
-                "[404] https://",
-                "[405] http://",
-                "[405] https://",
             )
             if any(term in lower for term in weak_rce_terms):
+                return True
+            # Drop pure [STATUS] URL lines that carry no vuln signal
+            # Keep lines that contain exploit-relevant keywords (jmx-console, manager, jboss, etc.)
+            _exploit_signals = ("jmx", "console", "manager", "jboss", "struts", "log4j", "put", "upload", "rce")
+            pure_status_url = re.match(r"^\[(\d{3})\]\s+https?://\S+$", clean.strip())
+            if pure_status_url and not any(sig in lower for sig in _exploit_signals):
                 return True
             if lower.startswith((
                 "target domain:", "java targets:", "tomcat targets:", "jboss targets:",
@@ -689,8 +709,11 @@ Keep it under 80 words total."""
             "xss", "sqli", "lfi", "ssti", "ssrf", "cves", "cors",
             "graphql", "jwt", "smuggling", "takeover", "misconfig",
             "exposure", "redirects", "idor", "auth_bypass", "cloud",
-            "cms", "rce",
-            "sqlmap",
+            "cms", "rce", "sqlmap",
+            # Exotic scanner categories
+            "websocket", "deserial", "xxe", "proto_pollution",
+            "host_header", "timing", "postmessage", "css_injection",
+            "esi", "dependency_confusion", "open_redirect", "dns_rebinding", "ssl",
         }
         for cat_dir in sorted(findings_path.iterdir()):
             if not cat_dir.is_dir() or cat_dir.name not in allowed_categories:
@@ -712,7 +735,26 @@ Keep it under 80 words total."""
                     seen.add(key)
                     candidates.append((self._finding_score(cat_dir.name, line), cat_dir.name, line))
         candidates.sort(key=lambda item: item[0], reverse=True)
-        return [(category, line) for _, category, line in candidates[:25]]
+
+        # Jaccard dedup — drop near-duplicates (>= 0.8 similarity) to reduce LLM token usage
+        def _ngrams(text: str, n: int = 3) -> set[str]:
+            words = text.lower().split()
+            return {" ".join(words[i:i + n]) for i in range(len(words) - n + 1)} if len(words) >= n else set(words)
+
+        deduped: list[tuple[str, str]] = []
+        seen_ngrams: list[set[str]] = []
+        for _, category, line in candidates:
+            ng = _ngrams(line)
+            if ng and any(
+                len(ng & prev) / len(ng | prev) >= 0.8
+                for prev in seen_ngrams if prev
+            ):
+                continue
+            deduped.append((category, line))
+            seen_ngrams.append(ng)
+            if len(deduped) >= 12:
+                break
+        return deduped
 
     def _build_report_evidence(self, findings_dir: str, recon_dir: str = "") -> str:
         findings_path = Path(findings_dir)
@@ -959,7 +1001,8 @@ appear verbatim in the data sections above. Do NOT invent, guess, or fabricate
 endpoints, URLs, APIs, credentials, or findings. If the data shows "(none)" or
 "(empty)", state that explicitly and do not substitute hypothetical examples."""
 
-        result = self._stream(prompt, f"Recon Analysis → {target}", MAX_RESP)
+        result = self._stream(prompt, f"Recon Analysis → {target}", MAX_RESP,
+                              ctx_size=CTX_ANALYZE)
         self._save_analysis(recon_dir, "01_recon_analysis.md", result)
         return result
 
@@ -1189,7 +1232,8 @@ Rules:
 - Steps must be copy-paste reproducible
 - Don't overclaim severity"""
 
-        result = self._stream(prompt, f"Report Writer → {target}", MAX_RESP_REPORT)
+        result = self._stream(prompt, f"Report Writer → {target}", MAX_RESP_REPORT,
+                              ctx_size=CTX_REPORT)
         if not result.strip():
             result = "NO_REPORTS"
         result = self._ground_report_output(result, evidence)
@@ -1698,7 +1742,7 @@ NEXT ACTION: <one concrete action>
                     "num_predict": max_tokens,
                     "temperature": 0.25,
                     "top_p": 0.9,
-                    "num_ctx": MAX_CTX,
+                    "num_ctx": CTX_ANALYZE,
                     "stop": [
                         "I cannot assist", "I'm unable to help",
                         "ethical implications", "without proper authorization",

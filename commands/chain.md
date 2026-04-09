@@ -4,6 +4,12 @@ description: Build an exploit chain — given bug A, finds B and C to combine fo
 
 # /chain
 
+## Initialization
+
+Before acting, read these files:
+1. `skills/bug-bounty/SKILL.md` — A→B chain table and known high-value chains
+2. `rules/hunting.md` — time-boxing and chain rules
+
 Build an A→B→C exploit chain for higher severity and payout.
 
 > Ref: `agents/chain-builder.md` (chain-building process), `skills/bug-bounty/SKILL.md` (A→B chain table + known high-value chains)

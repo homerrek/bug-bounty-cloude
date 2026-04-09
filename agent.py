@@ -405,9 +405,91 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_ssti_scan",
+            "description": (
+                "Detect Server-Side Template Injection (SSTI) — Jinja2, Twig, Freemarker, "
+                "EJS, Pug, Handlebars. Use when Python/PHP/Java/Node.js app is detected. "
+                "SSTI = direct path to RCE."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_open_redirect_scan",
+            "description": (
+                "Test for open redirect vulnerabilities on all live endpoints. "
+                "Critical for OAuth token theft chains (chain with JWT/OAuth findings). "
+                "Use when OAuth flow or redirect_uri parameters are found in recon."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_proto_pollution_scan",
+            "description": (
+                "Test for prototype pollution vulnerabilities (Node.js / JavaScript stacks). "
+                "Use when Express, Next.js, Nuxt, or any Node.js tech is detected. "
+                "PP can escalate to RCE with gadget chains."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_xxe_scan",
+            "description": (
+                "Test XML-accepting endpoints for XXE (XML External Entity) injection. "
+                "Use when XML content-type, SOAP endpoints, or SVG/RSS upload found. "
+                "XXE = file read, SSRF, and sometimes RCE."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_websocket_scan",
+            "description": (
+                "Test WebSocket endpoints for injection, IDOR, and auth issues. "
+                "WebSockets bypass many WAF rules and often lack auth checks. "
+                "Use when WS/WSS endpoints were found during recon."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_deserial_scan",
+            "description": (
+                "Test Java/PHP/.NET endpoints for insecure deserialization. "
+                "Use when Java (Spring, Struts), PHP (Laravel), or .NET stack detected. "
+                "Deserialization bugs typically lead directly to RCE."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 TOOL_NAMES = {t["function"]["name"] for t in TOOLS}
+
+# Tools that represent real scans (used by _can_finish guard)
+SCAN_TOOLS: frozenset[str] = frozenset({
+    "run_recon", "run_vuln_scan", "run_js_analysis", "run_secret_hunt",
+    "run_param_discovery", "run_post_param_discovery", "run_api_fuzz",
+    "run_cors_check", "run_cms_exploit", "run_rce_scan", "run_sqlmap_targeted",
+    "run_sqlmap_on_file", "run_jwt_audit",
+    "run_ssti_scan", "run_open_redirect_scan", "run_proto_pollution_scan",
+    "run_xxe_scan", "run_websocket_scan", "run_deserial_scan",
+})
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -591,6 +673,30 @@ class ToolDispatcher:
                 ok = h.run_jwt_audit(domain)
                 obs = self._summarize_findings(domain, "jwt", ok)
 
+            elif name == "run_ssti_scan":
+                ok = h.run_ssti_scan(domain)
+                obs = self._summarize_findings(domain, "ssti", ok)
+
+            elif name == "run_open_redirect_scan":
+                ok = h.run_open_redirect_scan(domain)
+                obs = self._summarize_findings(domain, "redirects", ok)
+
+            elif name == "run_proto_pollution_scan":
+                ok = h.run_proto_pollution_scan(domain)
+                obs = self._summarize_findings(domain, "proto_pollution", ok)
+
+            elif name == "run_xxe_scan":
+                ok = h.run_xxe_scan(domain)
+                obs = self._summarize_findings(domain, "xxe", ok)
+
+            elif name == "run_websocket_scan":
+                ok = h.run_websocket_scan(domain)
+                obs = self._summarize_findings(domain, "websocket", ok)
+
+            elif name == "run_deserial_scan":
+                ok = h.run_deserial_scan(domain)
+                obs = self._summarize_findings(domain, "deserial", ok)
+
             elif name == "read_recon_summary":
                 obs = self._read_recon_files(domain)
 
@@ -629,6 +735,25 @@ class ToolDispatcher:
 
     # ── Observation formatters ──────────────────────────────────────────────
 
+    @staticmethod
+    def _find_recon_file(recon_dir: str, filename: str, max_depth: int = 3) -> str | None:
+        """Find *filename* inside *recon_dir* up to *max_depth* levels deep.
+        Tries exact path first, then os.walk fallback."""
+        # Fast path — direct location
+        direct = os.path.join(recon_dir, filename)
+        if os.path.isfile(direct):
+            return direct
+        # os.walk fallback for nested structures
+        target_name = os.path.basename(filename)
+        for root, dirs, files in os.walk(recon_dir):
+            depth = root[len(recon_dir):].count(os.sep)
+            if depth > max_depth:
+                dirs.clear()
+                continue
+            if target_name in files:
+                return os.path.join(root, target_name)
+        return None
+
     def _summarize_recon(self, domain: str, ok: bool) -> str:
         h = _h()
         recon_dir = h._resolve_recon_dir(domain)
@@ -636,32 +761,32 @@ class ToolDispatcher:
 
         # Count live hosts
         for fn in ("live/httpx_full.txt", "httpx_full.txt"):
-            fp = os.path.join(recon_dir, fn)
-            if os.path.isfile(fp):
+            fp = self._find_recon_file(recon_dir, fn)
+            if fp:
                 count = sum(1 for _ in open(fp) if _.strip())
                 lines.append(f"Live hosts: {count}")
                 break
 
         # Count resolved subdomains
-        for fn in ("resolved.txt", "all.txt"):
-            fp = os.path.join(recon_dir, fn)
-            if os.path.isfile(fp):
+        for fn in ("subdomains/resolved.txt", "resolved.txt", "all.txt"):
+            fp = self._find_recon_file(recon_dir, fn)
+            if fp:
                 count = sum(1 for _ in open(fp) if _.strip())
                 lines.append(f"Subdomains: {count}")
                 break
 
         # Tech detections
         for fn in ("tech_priority.txt", "tech.txt"):
-            fp = os.path.join(recon_dir, fn)
-            if os.path.isfile(fp):
+            fp = self._find_recon_file(recon_dir, fn)
+            if fp:
                 techs = [l.strip() for l in open(fp) if l.strip()][:10]
                 lines.append(f"Tech detected: {', '.join(techs)}")
                 break
 
         # Parameterized URLs
         for fn in ("urls/with_params.txt", "params/with_params.txt"):
-            fp = os.path.join(recon_dir, fn)
-            if os.path.isfile(fp):
+            fp = self._find_recon_file(recon_dir, fn)
+            if fp:
                 count = sum(1 for _ in open(fp) if _.strip())
                 lines.append(f"Parameterized URLs: {count}")
                 break
@@ -682,9 +807,17 @@ class ToolDispatcher:
                     fp = os.path.join(root, fn)
                     try:
                         content = Path(fp).read_text(errors="replace")
-                        if any(kw in content.lower() for kw in
-                               ("critical", "high", "vulnerable", "injectable",
-                                "rce", "sqli", "open redirect", "exposed", "default cred")):
+                        if any(kw in content.lower() for kw in (
+                                "critical", "high", "vulnerable", "injectable",
+                                "rce", "sqli", "open redirect", "exposed", "default cred",
+                                # nuclei bracket-tag format (v4.x)
+                                "[critical]", "[high]", "[medium]",
+                                # additional vuln class keywords
+                                "xss", "idor", "ssti", "cors", "jwt", "graphql",
+                                "takeover", "auth bypass", "403 bypass",
+                                "prototype pollution", "deserialization",
+                                "reflected in response", "origin accepted",
+                        )):
                             head = content[:400].replace("\n", " ")
                             lines.append(f"  [{fn}] {head}")
                     except Exception:
@@ -891,9 +1024,28 @@ def race_analysis(prompt: str, models: list[str], client,
     Ask multiple Ollama models the same analysis question.
     Return whichever completes first with a non-empty answer.
     Used for: triage decisions, next-action advice, finding classification.
+
+    *client* may be an Ollama client object OR a Brain/LLMClient instance.
+    When BRAIN_PROVIDER=claude/openai/grok, Brain.client is None — this
+    function detects that and routes through LLMClient.chat() instead.
     Falls back to sequential if only one model available.
     """
     import threading
+
+    # Detect cloud-provider path (Brain.client is None for non-Ollama providers)
+    if client is None:
+        # No Ollama client available — try to use Brain._llm if accessible
+        if _BRAIN_OK:
+            try:
+                from brain import Brain as _Brain
+                b = _Brain()
+                if b.enabled:
+                    system_prompt = system or AGENT_SYSTEM
+                    return b._llm.chat(b.model, system_prompt, prompt,
+                                       max_tokens=800, temperature=0.1) or ""
+            except Exception:
+                pass
+        return ""
 
     result_holder: dict[str, str] = {}
     done_event = threading.Event()
@@ -971,6 +1123,15 @@ class ReActAgent:
     """
 
     MIN_STEPS_BEFORE_FINISH = 6  # persistence: must run at least N tools before finish allowed
+    MIN_SCAN_TOOLS_BEFORE_FINISH = 2  # must complete at least 2 real scans before finishing
+
+    def _can_finish(self) -> bool:
+        """Return True only when the agent has done enough real work to wrap up."""
+        completed_scans = sum(
+            1 for step in self.memory.completed_steps if step in SCAN_TOOLS
+        )
+        return (self.memory.step_count >= self.MIN_STEPS_BEFORE_FINISH
+                and completed_scans >= self.MIN_SCAN_TOOLS_BEFORE_FINISH)
 
     def __init__(self, domain: str, memory: HuntMemory,
                  dispatcher: ToolDispatcher,
@@ -1143,14 +1304,17 @@ class ReActAgent:
                         args = {}
 
                 # ── Persistence enforcement: block early finish ──────────
-                if name == "finish" and self.memory.step_count < self.MIN_STEPS_BEFORE_FINISH:
-                    remaining_needed = self.MIN_STEPS_BEFORE_FINISH - self.memory.step_count
-                    print(f"{YELLOW}[Agent] Finish blocked — only {self.memory.step_count} steps done, "
-                          f"need {remaining_needed} more. Continuing...{NC}", flush=True)
+                if name == "finish" and not self._can_finish():
+                    completed_scans = sum(1 for s in self.memory.completed_steps if s in SCAN_TOOLS)
+                    remaining_steps = max(0, self.MIN_STEPS_BEFORE_FINISH - self.memory.step_count)
+                    remaining_scans = max(0, self.MIN_SCAN_TOOLS_BEFORE_FINISH - completed_scans)
+                    print(f"{YELLOW}[Agent] Finish blocked — steps={self.memory.step_count}, "
+                          f"scans={completed_scans}. Need {remaining_steps} more steps "
+                          f"and {remaining_scans} more scan(s). Continuing...{NC}", flush=True)
                     results.append(
-                        f"[SYSTEM] Too early to finish. You have only run "
-                        f"{self.memory.step_count} tools. Run at least "
-                        f"{remaining_needed} more high-impact tools before concluding."
+                        f"[SYSTEM] Too early to finish. Steps completed: {self.memory.step_count} "
+                        f"(need {self.MIN_STEPS_BEFORE_FINISH}), real scans completed: {completed_scans} "
+                        f"(need {self.MIN_SCAN_TOOLS_BEFORE_FINISH}). Run more scanning tools first."
                     )
                     continue
 
@@ -1526,7 +1690,8 @@ Examples:
     parser.add_argument("--scope-lock",  action="store_true",     help="Stick to exact target only")
     parser.add_argument("--max-urls",    type=int,   default=100, help="Max URLs in recon (default 100)")
     parser.add_argument("--model",       type=str,   default=None, help="Ollama model override")
-    parser.add_argument("--langgraph",   action="store_true",     help="Use real LangGraph backend")
+    parser.add_argument("--langgraph",   action="store_true", default=_LANGGRAPH_OK,
+                        help="Use real LangGraph backend (auto-enabled when installed)")
     parser.add_argument("--resume",      type=str,   default=None, help="Resume session ID")
     parser.add_argument("--list-models", action="store_true",     help="List available Ollama models")
     parser.add_argument("--bump",        type=str,   default=None,

@@ -4,6 +4,12 @@ description: Start hunting on a target — loads scope, reads disclosed reports,
 
 # /hunt
 
+## Initialization
+
+Before acting, read these files:
+1. `skills/bug-bounty/SKILL.md` — full testing methodology
+2. `rules/hunting.md` — 20 critical hunting rules
+
 Active vulnerability hunting on a target.
 
 > Ref: `skills/bug-bounty/SKILL.md` (full testing methodology, A→B chain table, tech stack → vuln class mapping)

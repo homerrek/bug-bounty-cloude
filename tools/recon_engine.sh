@@ -23,7 +23,8 @@ log_done()  { echo -e "    ${GREEN}[✓]${NC} $1"; }
 TARGET="${1:?Usage: $0 <target-domain> [--quick]}"
 QUICK_MODE="${2:-}"
 BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RECON_DIR="$BASE_DIR/recon/$TARGET"
+# Resolve output directory via paths.py (respects BBH_OUTPUT_DIR env var)
+RECON_DIR="$(python3 -c "import sys; sys.path.insert(0,'$(dirname "$0")'); from paths import recon_dir; print(recon_dir('$TARGET'))" 2>/dev/null || echo "$BASE_DIR/recon/$TARGET")"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 THREADS=20
 RATE_LIMIT=50  # requests per second

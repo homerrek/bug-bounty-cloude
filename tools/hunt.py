@@ -26,14 +26,18 @@ import os
 import subprocess
 import sys
 from datetime import datetime
+from pathlib import Path
 
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(TOOLS_DIR)
 TARGETS_DIR = os.path.join(BASE_DIR, "targets")
-RECON_DIR = os.path.join(BASE_DIR, "recon")
-FINDINGS_DIR = os.path.join(BASE_DIR, "findings")
-REPORTS_DIR = os.path.join(BASE_DIR, "reports")
 WORDLIST_DIR = os.path.join(BASE_DIR, "wordlists")
+
+# Output root — configurable via BBH_OUTPUT_DIR, defaults to ~/bug-bounty-outputs
+OUTPUT_ROOT = os.environ.get("BBH_OUTPUT_DIR", str(Path.home() / "bug-bounty-outputs"))
+RECON_DIR    = os.path.join(OUTPUT_ROOT, "recon")
+FINDINGS_DIR = os.path.join(OUTPUT_ROOT, "findings")
+REPORTS_DIR  = os.path.join(OUTPUT_ROOT, "reports")
 
 # Colors
 GREEN = "\033[0;32m"
@@ -132,6 +136,29 @@ def select_targets(top_n=10):
     return []
 
 
+def _resolve_recon_dir(domain: str) -> str:
+    """Return the recon output directory for *domain* (not guaranteed to exist)."""
+    return os.path.join(RECON_DIR, domain)
+
+
+def _resolve_findings_dir(domain: str, create: bool = False) -> str:
+    """Return the findings output directory for *domain*."""
+    path = os.path.join(FINDINGS_DIR, domain)
+    if create:
+        os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _activate_recon_session(domain: str, requested_session_id: str = "latest",
+                            create: bool = True) -> tuple[str, str]:
+    """Return (session_id, recon_dir) for *domain*.  Creates the directory when *create* is True."""
+    rdir = _resolve_recon_dir(domain)
+    if create:
+        os.makedirs(rdir, exist_ok=True)
+    session_id = requested_session_id if requested_session_id != "latest" else "default"
+    return session_id, rdir
+
+
 def run_recon(domain, quick=False):
     """Run recon engine on a domain."""
     log("info", f"Running recon on {domain}...")
@@ -139,17 +166,29 @@ def run_recon(domain, quick=False):
     quick_flag = "--quick" if quick else ""
 
     # Run with live output
+    ok = False
     try:
         proc = subprocess.Popen(
             f'bash "{script}" "{domain}" {quick_flag}',
             shell=True, cwd=BASE_DIR
         )
         proc.wait(timeout=1800)  # 30 min timeout
-        return proc.returncode == 0
+        ok = proc.returncode == 0
     except subprocess.TimeoutExpired:
         proc.kill()
         log("err", f"Recon timed out for {domain}")
-        return False
+        ok = False
+
+    # Normalize recon output so brain.py reads consistent format (TODO-5 follow-through)
+    try:
+        sys.path.insert(0, TOOLS_DIR)
+        from recon_adapter import ReconAdapter
+        adapter = ReconAdapter(_resolve_recon_dir(domain))
+        adapter.normalize()
+    except Exception as _norm_err:
+        log("warn", f"ReconAdapter.normalize() skipped: {_norm_err}")
+
+    return ok
 
 
 def check_cicd_results(domain):
@@ -189,6 +228,158 @@ def run_vuln_scan(domain, quick=False):
         proc.kill()
         log("err", f"Vulnerability scan timed out for {domain}")
         return False
+
+
+def _run_scanner(scanner_file: str, args_str: str, domain: str, category: str,
+                 timeout: int = 300) -> bool:
+    """Helper: run a scanner script and write output to findings dir."""
+    scanner_path = os.path.join(TOOLS_DIR, scanner_file)
+    if not os.path.exists(scanner_path):
+        log("warn", f"Scanner not found: {scanner_file}")
+        return False
+    out_dir = os.path.join(FINDINGS_DIR, domain, category)
+    os.makedirs(out_dir, exist_ok=True)
+    out_file = os.path.join(out_dir, f"{scanner_file.replace('.py', '')}_results.json")
+    cmd = f'python3 "{scanner_path}" {args_str} > "{out_file}" 2>&1'
+    ok, _ = run_cmd(cmd, timeout=timeout)
+    return ok
+
+
+def run_js_analysis(domain: str) -> bool:
+    """Download and analyse JavaScript files discovered during recon."""
+    target_url = f"https://{domain}"
+    return _run_scanner("xss_scanner.py", f'--target "{target_url}" --js-only --json', domain, "js")
+
+
+def run_secret_hunt(domain: str) -> bool:
+    """Scan for leaked secrets in JS files and public repos."""
+    target_url = f"https://{domain}"
+    return _run_scanner("xss_scanner.py", f'--target "{target_url}" --secrets --json', domain, "secrets")
+
+
+def run_param_discovery(domain: str) -> bool:
+    """Brute-force GET URL parameters on all live hosts."""
+    recon_dir_path = os.path.join(RECON_DIR, domain)
+    if not os.path.isdir(recon_dir_path):
+        return False
+    out_dir = os.path.join(FINDINGS_DIR, domain, "params")
+    os.makedirs(out_dir, exist_ok=True)
+    hosts_file = os.path.join(recon_dir_path, "live", "httpx_full.txt")
+    if not os.path.isfile(hosts_file):
+        hosts_file = os.path.join(recon_dir_path, "httpx_full.txt")
+    if not os.path.isfile(hosts_file):
+        return False
+    out_file = os.path.join(out_dir, "params_discovered.txt")
+    cmd = f'cat "{hosts_file}" | python3 -m arjun --stdin -oJ "{out_file}" 2>&1 || true'
+    ok, _ = run_cmd(cmd, timeout=600)
+    return ok
+
+
+def run_post_param_discovery(domain: str, cookies: str = "") -> bool:
+    """Discover POST form endpoints and parameters."""
+    target_url = f"https://{domain}"
+    cookie_arg = f'--cookie "{cookies}"' if cookies else ""
+    return _run_scanner("sqli_scanner.py",
+                        f'--target "{target_url}" {cookie_arg} --post --json',
+                        domain, "params", timeout=600)
+
+
+def run_api_fuzz(domain: str) -> bool:
+    """Fuzz API endpoints for IDOR, auth bypass, and privilege escalation."""
+    target_url = f"https://{domain}"
+    return _run_scanner("h1_idor_scanner.py", f'--target "{target_url}" --json', domain, "idor")
+
+
+def run_cors_check(domain: str) -> bool:
+    """Test live hosts for CORS misconfigurations."""
+    target_url = f"https://{domain}"
+    return _run_scanner("cors_scanner.py", f'--target "{target_url}" --json --rate 1.0', domain, "cors")
+
+
+def run_cms_exploit(domain: str) -> bool:
+    """Run CMS-specific exploit checks (Drupal, WordPress, Joomla, Magento)."""
+    target_url = f"https://{domain}"
+    recon_dir_path = os.path.join(RECON_DIR, domain)
+    tech_file = os.path.join(recon_dir_path, "tech_priority.txt")
+    cmd = f'python3 "{os.path.join(TOOLS_DIR, "vuln_scanner.sh")}" --cms-only "{recon_dir_path}" 2>&1 || true'
+    out_dir = os.path.join(FINDINGS_DIR, domain, "cms")
+    os.makedirs(out_dir, exist_ok=True)
+    out_file = os.path.join(out_dir, "cms_results.txt")
+    ok, output = run_cmd(cmd, timeout=300)
+    Path(out_file).write_text(output)
+    return ok
+
+
+def run_rce_scan(domain: str) -> bool:
+    """Scan for Remote Code Execution vectors (Log4Shell, Tomcat PUT, JBoss, SSTI)."""
+    target_url = f"https://{domain}"
+    return _run_scanner("ssti_scanner.py", f'--target "{target_url}" --json --rate 1.0', domain, "rce")
+
+
+def run_sqlmap_targeted(domain: str) -> bool:
+    """Run sqlmap against parameterized GET URLs found in recon."""
+    target_url = f"https://{domain}"
+    return _run_scanner("sqli_scanner.py",
+                        f'--target "{target_url}" --sqlmap --json',
+                        domain, "sqli", timeout=900)
+
+
+def run_sqlmap_request_file(request_file: str, domain: str = "",
+                             level: int = 5, risk: int = 3) -> bool:
+    """Run sqlmap against a specific raw HTTP request file."""
+    out_dir = os.path.join(FINDINGS_DIR, domain or "unknown", "sqlmap")
+    os.makedirs(out_dir, exist_ok=True)
+    out_file = os.path.join(out_dir, "sqlmap_results.txt")
+    cmd = (f'sqlmap -r "{request_file}" --level={level} --risk={risk} '
+           f'--batch --output-dir="{out_dir}" 2>&1 | tee "{out_file}"')
+    ok, _ = run_cmd(cmd, timeout=1200)
+    return ok
+
+
+def run_jwt_audit(domain: str) -> bool:
+    """Audit JWT tokens found in recon artifacts."""
+    target_url = f"https://{domain}"
+    return _run_scanner("jwt_scanner.py", f'--target "{target_url}" --json', domain, "jwt")
+
+
+def run_ssti_scan(domain: str) -> bool:
+    """Detect SSTI injection (Jinja2, Twig, Freemarker, EJS, Pug)."""
+    target_url = f"https://{domain}"
+    return _run_scanner("ssti_scanner.py", f'--target "{target_url}" --json --rate 1.0', domain, "rce")
+
+
+def run_open_redirect_scan(domain: str) -> bool:
+    """Test for open redirects — critical for OAuth token theft chains."""
+    target_url = f"https://{domain}"
+    return _run_scanner("open_redirect_scanner.py",
+                        f'--target "{target_url}" --json --rate 1.0',
+                        domain, "redirects")
+
+
+def run_proto_pollution_scan(domain: str) -> bool:
+    """Test for prototype pollution (Node.js stacks)."""
+    target_url = f"https://{domain}"
+    return _run_scanner("proto_pollution_scanner.py",
+                        f'--url "{target_url}" --json',
+                        domain, "proto_pollution")
+
+
+def run_xxe_scan(domain: str) -> bool:
+    """Test XML-accepting endpoints for XXE injection."""
+    target_url = f"https://{domain}"
+    return _run_scanner("xxe_scanner.py", f'--url "{target_url}" --json', domain, "xxe")
+
+
+def run_websocket_scan(domain: str) -> bool:
+    """Test WebSocket endpoints for injection and auth issues."""
+    ws_url = f"wss://{domain}"
+    return _run_scanner("websocket_scanner.py", f'--url "{ws_url}" --json', domain, "websocket")
+
+
+def run_deserial_scan(domain: str) -> bool:
+    """Test Java/PHP/.NET endpoints for deserialization vulnerabilities."""
+    target_url = f"https://{domain}"
+    return _run_scanner("deserial_scanner.py", f'--url "{target_url}" --json', domain, "deserial")
 
 
 def generate_reports(domain):

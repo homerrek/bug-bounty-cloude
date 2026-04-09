@@ -4,6 +4,12 @@ description: Show ranked attack surface for a target based on recon output + hun
 
 # /surface
 
+## Initialization
+
+Before acting, read these files:
+1. `skills/bug-bounty/SKILL.md` — attack surface ranking methodology
+2. `rules/hunting.md` — priority and impact-first rules
+
 View the prioritized attack surface for a target.
 
 ## What This Does
