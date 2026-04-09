@@ -1,5 +1,18 @@
 # Claude Bug Bounty — Plugin Guide
 
+## On Session Start
+
+> **Required**: Before running any command, read these files in order:
+> 1. `skills/bug-bounty/SKILL.md` — master workflow and all vuln classes
+> 2. `rules/hunting.md` — 20 critical hunting rules (always active)
+> 3. `rules/reporting.md` — report quality rules
+
+```
+/read skills/bug-bounty/SKILL.md
+/read rules/hunting.md
+/read rules/reporting.md
+```
+
 Claude Code plugin for professional bug bounty hunting across HackerOne, Bugcrowd, Intigriti, and Immunefi.
 
 ## Skills

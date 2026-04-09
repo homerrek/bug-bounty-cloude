@@ -4,6 +4,12 @@ description: Run full recon pipeline on a target — subdomain enum (Chaos API +
 
 # /recon
 
+## Initialization
+
+Before acting, read these files:
+1. `skills/bug-bounty/SKILL.md` — recon methodology and tool selection
+2. `rules/hunting.md` — scope and recon rules
+
 Run the full recon pipeline on a target and produce a prioritized attack surface.
 
 > Ref: `agents/recon-agent.md` (agent-based recon), `agents/recon-ranker.md` (ranking after recon)

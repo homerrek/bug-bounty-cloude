@@ -23,7 +23,24 @@ log_done()  { echo -e "    ${GREEN}[✓]${NC} $1"; }
 TARGET="${1:?Usage: $0 <target-domain> [--quick]}"
 QUICK_MODE="${2:-}"
 BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RECON_DIR="$BASE_DIR/recon/$TARGET"
+TOOLS_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Resolve output directory via paths.py (respects BBH_OUTPUT_DIR env var).
+# Runs as a standalone invocation to avoid shell quoting/expansion issues.
+_resolve_recon_dir() {
+    local target="$1"
+    python3 - <<PYEOF 2>/dev/null
+import sys
+sys.path.insert(0, '$TOOLS_DIR')
+from paths import recon_dir
+print(recon_dir('$target'))
+PYEOF
+}
+RECON_DIR="$(_resolve_recon_dir "$TARGET")"
+# Fallback if python3 or paths.py is unavailable
+if [ -z "$RECON_DIR" ]; then
+    RECON_DIR="${BBH_OUTPUT_DIR:-$HOME/bug-bounty-outputs}/$TARGET/recon"
+fi
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 THREADS=20
 RATE_LIMIT=50  # requests per second

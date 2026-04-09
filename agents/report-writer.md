@@ -35,6 +35,32 @@ Data exposed: [what data type, how sensitive]
 CVSS factors: [AV, AC, PR, UI, S, C, I, A]
 ```
 
+## CVSS 3.1 Field Reference
+
+| Field | Options |
+|-------|---------|
+| **AV** (Attack Vector) | N=Network, A=Adjacent, L=Local, P=Physical |
+| **AC** (Attack Complexity) | L=Low, H=High |
+| **PR** (Privileges Required) | N=None, L=Low, H=High |
+| **UI** (User Interaction) | N=None, R=Required |
+| **S** (Scope) | U=Unchanged, C=Changed |
+| **C** (Confidentiality) | N=None, L=Low, H=High |
+| **I** (Integrity) | N=None, L=Low, H=High |
+| **A** (Availability) | N=None, L=Low, H=High |
+
+Common patterns:
+- IDOR read PII (auth required): AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N → **6.5 Medium**
+- Auth bypass → admin: AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H → **9.8 Critical**
+- SSRF → cloud metadata: AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N → **9.1 Critical**
+- Stored XSS (no auth): AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N → **6.1 Medium**
+
+## Impact-First Ordering Rule
+
+Every report must open with: **What can an attacker DO?** (not what the bug IS)
+
+❌ Wrong: "A reflected XSS vulnerability exists in the search parameter."
+✅ Right: "An unauthenticated attacker can steal session cookies for any user who clicks a crafted link, achieving full account takeover."
+
 ## HackerOne Format
 
 ```markdown
@@ -78,6 +104,36 @@ CVSS factors: [AV, AC, PR, UI, S, C, I, A]
 
 ## Severity Justification
 P[N] — [one sentence justification]
+```
+
+## Intigriti Format
+
+```markdown
+# [Bug Class] on [endpoint] — [impact in title]
+
+## Summary
+[Impact-first paragraph. Quantify the impact.]
+
+## CVSS 3.1
+**Score:** [N.N (Severity)]
+**Vector:** [CVSS:3.1/AV:.../...]
+
+## Affected Endpoint
+[Method] [Full URL]
+
+## Steps to Reproduce
+1. [Step 1]
+2. [Send exact HTTP request:]
+   ```
+   [EXACT REQUEST]
+   ```
+3. [Observe: exact response showing impact]
+
+## Business Impact
+[Concrete business consequence — data breach, account takeover, financial loss, compliance risk.]
+
+## Recommended Fix
+[Specific code-level fix, 1-2 sentences.]
 ```
 
 ## Immunefi Format (Web3)
